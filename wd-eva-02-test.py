@@ -1,6 +1,7 @@
 # image_database_onnx_optimized.py
 import argparse
 import os
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 import sqlite3
 import huggingface_hub
 import numpy as np
