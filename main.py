@@ -83,12 +83,17 @@ def search_page():
 def folder_view_page(folder_path):
     decoded_folder_path = unquote(folder_path)
     target_dir = decoded_folder_path.replace('\\', '/')
-    folder_images = []
-    for img_path in image_files:
-        img_dir = os.path.dirname(img_path).replace('\\', '/')
-        if img_dir == target_dir: folder_images.append(img_path)
-    folder_images.sort(key=natural_sort_key)
-    return render_template_string(FOLDER_VIEW_HTML, folder_name=decoded_folder_path, images=folder_images)
+    folder_media = []
+    
+    # 修改点：合并图片和视频列表，确保所有媒体都被扫描
+    all_media_files = image_files + video_and_gif_files
+    
+    for media_path in all_media_files:
+        img_dir = os.path.dirname(media_path).replace('\\', '/')
+        if img_dir == target_dir: folder_media.append(media_path)
+        
+    folder_media.sort(key=natural_sort_key)
+    return render_template_string(FOLDER_VIEW_HTML, folder_name=decoded_folder_path, media_files=folder_media)
 
 # --- API 数据接口 ---
 @app.route('/api/images')
@@ -182,7 +187,7 @@ SLIDESHOW_HTML = """
 """
 
 # ==========================================================
-#  ↓↓↓ 更新：文件夹视图模板 (修改为 1列 垂直Feed流) ↓↓↓
+#  ↓↓↓ 核心修正：文件夹视图模板 (支持视频/GIF混排+播放) ↓↓↓
 # ==========================================================
 FOLDER_VIEW_HTML = """
 <!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>文件夹: {{ folder_name }}</title><style>{% raw %}
@@ -192,46 +197,79 @@ FOLDER_VIEW_HTML = """
     .page-title{padding:20px;color:#fff;background-color:#333;margin:0;text-align:center;}
     .page-title h1{margin:0;font-size:1.2em;word-break:break-all;font-weight:normal;color:#ddd}
     .page-title span{font-weight:bold;color:#fff;font-size:1.4em;margin-right:10px}
-    
-    /* 改为单列布局 */
-    #grid-container{
-        display:grid;
-        grid-template-columns: 1fr; /* 强制单列 */
-        gap: 30px;
-        padding: 20px;
-        max-width: 800px; /* 限制最大宽度，防止大屏图片过大 */
-        margin: 0 auto;   /* 容器居中 */
-    }
-    
-    .grid-item{
-        position:relative;
-        border-radius:8px;
-        cursor:pointer;
-        background-color:#333;
-        overflow:hidden;
-        min-height: 200px; /* 骨架屏占位高度 */
-    }
-    
-    .grid-item img{
-        width:100%;
-        height: auto; /* 保持图片原始比例 */
-        display:block;
-        /* object-fit: cover; 不需要cover，因为我们希望看到完整图片 */
-        transition:opacity .5s;
-    }
-    .grid-item img.loaded{opacity:1}
-    
+    #grid-container{display:grid;grid-template-columns: 1fr; gap: 30px; padding: 20px; max-width: 800px; margin: 0 auto;}
+    .grid-item{position:relative;border-radius:8px;cursor:pointer;background-color:#333;overflow:hidden;min-height:200px;}
+    .grid-item img, .grid-item video{width:100%;height:auto;display:block;transition:opacity .5s}
+    .grid-item img.loaded, .grid-item video.loaded{opacity:1}
     .skeleton{position:absolute;top:0;left:0;width:100%;height:100%;background:linear-gradient(90deg,#333 25%,#444 50%,#333 75%);background-size:200% 100%;animation:shimmer 1.5s infinite}
     @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
-    
     .modal{display:none;position:fixed;z-index:1000;left:0;top:0;width:100%;height:100%;overflow:hidden;background-color:rgba(0,0,0,.9);align-items:center;justify-content:center}
-    .modal-content{max-width:95vw;max-height:95vh;object-fit:contain}
+    .modal-content-container{width:100%;height:100%;display:flex;justify-content:center;align-items:center}
+    .modal-content-container img, .modal-content-container video{max-width:95vw;max-height:95vh;object-fit:contain}
     .modal-close{position:absolute;top:20px;right:35px;color:#f1f1f1;font-size:40px;font-weight:700;cursor:pointer}
     .modal-nav{position:absolute;top:50%;transform:translateY(-50%);color:#f1f1f1;font-size:60px;font-weight:700;cursor:pointer;user-select:none;padding:16px}
     .modal-prev{left:0}.modal-next{right:0}
     .modal-folder-btn{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.6);border:1px solid #fff;color:#fff;padding:8px 16px;border-radius:4px;text-decoration:none;font-size:14px;z-index:1002;transition:background .2s}.modal-folder-btn:hover{background:rgba(255,255,255,0.2)}
-{% endraw %}</style></head><body><div class="header-nav"><a href="/">返回随机</a><a href="/search">搜索</a><a href="/grid">图片网格</a><a href="/tags">角色</a></div><div class="page-title"><h1><span>📁</span>{{ folder_name }}</h1></div><div id="grid-container">{% for image in images %}<div class="grid-item" data-index="{{ loop.index0 }}"><div class="skeleton"></div><img data-index="{{ loop.index0 }}" src="/media/{{ image }}" onload="this.previousElementSibling.remove(); this.classList.add('loaded')"></div>{% endfor %}</div><div id="imageModal" class="modal"><span class="modal-close">&times;</span><a id="modalFolderBtn" class="modal-folder-btn" target="_blank">查看所属图集</a><span class="modal-nav modal-prev">&#10094;</span><img class="modal-content" id="modalImage"><span class="modal-nav modal-next">&#10095;</span></div><script>{% raw %}
-    document.addEventListener("DOMContentLoaded",()=>{const grid=document.getElementById("grid-container"),mod=document.getElementById("imageModal"),modImg=document.getElementById("modalImage"),closeBtn=document.querySelector(".modal-close"),prevBtn=document.querySelector(".modal-prev"),nextBtn=document.querySelector(".modal-next"),modFolderBtn=document.getElementById("modalFolderBtn");const allImages = Array.from(document.querySelectorAll('.grid-item img')).map(img => img.getAttribute('src'));let currIdx = -1;function openMod(idx){currIdx=parseInt(idx);const path=allImages[currIdx];modImg.src=path;mod.style.display="flex";document.body.style.overflow="hidden";const lastSlash=path.lastIndexOf('/');if(lastSlash>-1){const f=path.substring(0,lastSlash);modFolderBtn.href=`/folder/${encodeURIComponent(f.replace('/media/',''))}`;modFolderBtn.style.display="block"}else{modFolderBtn.style.display="none"}}function closeMod(){mod.style.display="none";document.body.style.overflow=""}function nextMod(){if(allImages.length){currIdx=(currIdx+1)%allImages.length;openMod(currIdx)}}function prevMod(){if(allImages.length){currIdx=(currIdx-1+allImages.length)%allImages.length;openMod(currIdx)}}grid.addEventListener("click",e=>{e.target.dataset.index&&openMod(e.target.dataset.index)});closeBtn.addEventListener("click",closeMod);prevBtn.addEventListener("click",prevMod);nextBtn.addEventListener("click",nextMod);mod.addEventListener("click",e=>{if(e.target===mod)closeMod()});document.addEventListener("keydown",e=>{if(mod.style.display==="flex"){if(e.key==="Escape")closeMod();else if(e.key==="ArrowRight")nextMod();else if(e.key==="ArrowLeft")prevMod()}});});
+{% endraw %}</style></head><body><div class="header-nav"><a href="/">返回随机</a><a href="/search">搜索</a><a href="/grid">图片网格</a><a href="/tags">角色</a></div><div class="page-title"><h1><span>📁</span>{{ folder_name }}</h1></div>
+<div id="grid-container">
+    {% for file in media_files %}
+    <div class="grid-item" data-index="{{ loop.index0 }}">
+        <div class="skeleton"></div>
+        {% if file.lower().endswith(('.mp4', '.webm', '.mov', '.mkv', '.avi')) %}
+            <video data-index="{{ loop.index0 }}" src="/media/{{ file }}" autoplay loop muted playsinline onloadeddata="this.previousElementSibling.remove(); this.classList.add('loaded')"></video>
+        {% else %}
+            <img data-index="{{ loop.index0 }}" src="/media/{{ file }}" onload="this.previousElementSibling.remove(); this.classList.add('loaded')">
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+<div id="imageModal" class="modal"><span class="modal-close">&times;</span>
+<a id="modalFolderBtn" class="modal-folder-btn" target="_blank">查看所属图集</a>
+<span class="modal-nav modal-prev">&#10094;</span>
+<div class="modal-content-container" id="modalMediaContainer"></div>
+<span class="modal-nav modal-next">&#10095;</span></div>
+<script>{% raw %}
+    document.addEventListener("DOMContentLoaded",()=>{
+        const grid=document.getElementById("grid-container"),mod=document.getElementById("imageModal"),mediaContainer=document.getElementById("modalMediaContainer"),closeBtn=document.querySelector(".modal-close"),prevBtn=document.querySelector(".modal-prev"),nextBtn=document.querySelector(".modal-next"),modFolderBtn=document.getElementById("modalFolderBtn");
+        // 获取所有媒体元素的源
+        const allMediaItems = Array.from(document.querySelectorAll('.grid-item img, .grid-item video')).map(el => el.getAttribute('src'));
+        let currIdx = -1;
+
+        function openMod(idx){
+            currIdx=parseInt(idx);
+            const path = allMediaItems[currIdx];
+            const isVideo = path.toLowerCase().match(/\.(mp4|webm|mov|mkv|avi)$/);
+            mediaContainer.innerHTML = '';
+            
+            let el;
+            if (isVideo) {
+                el = document.createElement('video');
+                el.src = path;
+                el.autoplay = true; el.loop = true; el.muted = true; el.playsInline = true; el.controls = true;
+            } else {
+                el = document.createElement('img');
+                el.src = path;
+            }
+            mediaContainer.appendChild(el);
+            
+            mod.style.display="flex";document.body.style.overflow="hidden";
+            const lastSlash=path.lastIndexOf('/');
+            if(lastSlash>-1){const f=path.substring(0,lastSlash);modFolderBtn.href=`/folder/${encodeURIComponent(f.replace('/media/',''))}`;modFolderBtn.style.display="block"}else{modFolderBtn.style.display="none"}
+        }
+        function closeMod(){mod.style.display="none";document.body.style.overflow="";mediaContainer.innerHTML=''}
+        function nextMod(){if(allMediaItems.length){currIdx=(currIdx+1)%allMediaItems.length;openMod(currIdx)}}
+        function prevMod(){if(allMediaItems.length){currIdx=(currIdx-1+allMediaItems.length)%allMediaItems.length;openMod(currIdx)}}
+
+        grid.addEventListener("click",e=>{
+            // 处理点击事件，找到最近的带data-index的元素（可能是img或video）
+            const target = e.target.closest('[data-index]');
+            if(target && target.dataset.index){ openMod(target.dataset.index); }
+        });
+        
+        closeBtn.addEventListener("click",closeMod);prevBtn.addEventListener("click",prevMod);nextBtn.addEventListener("click",nextMod);
+        mod.addEventListener("click",e=>{if(e.target===mod || e.target===mediaContainer)closeMod()});
+        document.addEventListener("keydown",e=>{if(mod.style.display==="flex"){if(e.key==="Escape")closeMod();else if(e.key==="ArrowRight")nextMod();else if(e.key==="ArrowLeft")prevMod()}});
+    });
 {% endraw %}</script></body></html>
 """
 
