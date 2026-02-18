@@ -85,15 +85,21 @@ def folder_view_page(folder_path):
     clean_dir = decoded_path.lstrip('/')
     if clean_dir.startswith('media/'): clean_dir = clean_dir[6:]
     elif clean_dir == 'media': clean_dir = ''
-        
+    
+    # 将解码后的路径也转为相对路径进行匹配逻辑（防御性编程）
+    if os.path.isabs(clean_dir):
+        try: clean_dir = os.path.relpath(clean_dir, PROJECT_PARENT_DIR).replace('\\', '/')
+        except ValueError: pass
+
     folder_media = []
     all_media_files = image_files + video_and_gif_files
     for media_path in all_media_files:
         img_dir = os.path.dirname(media_path).replace('\\', '/')
-        if img_dir == clean_dir: folder_media.append(media_path)
+        if img_dir == clean_dir:
+            folder_media.append(media_path)
+            
     folder_media.sort(key=natural_sort_key)
-    display_name = clean_dir if clean_dir else "Root Folder"
-    return render_template_string(FOLDER_VIEW_HTML, folder_name=display_name, media_files=folder_media)
+    return render_template_string(FOLDER_VIEW_HTML, folder_path_encoded=folder_path, PAGE_SIZE=PAGE_SIZE)
 
 # --- API 数据接口 ---
 @app.route('/api/images')
@@ -128,6 +134,9 @@ def get_characters_with_covers():
     character_data.extend([dict(row) for row in other_characters])
     return jsonify(character_data)
 
+# ==========================================================
+#  ↓↓↓ 核心修复：将绝对路径转为相对路径，修复图集跳转链接 ↓↓↓
+# ==========================================================
 @app.route('/api/character_images/<path:character_name>')
 def get_character_images(character_name):
     conn = get_db_connection();
@@ -136,13 +145,22 @@ def get_character_images(character_name):
     params = (character_name,)
     images = conn.execute(query, params).fetchall()
     conn.close()
-    image_paths = [row['filepath'] for row in images]
-    random.shuffle(image_paths) 
-    return jsonify(image_paths)
+    
+    results = []
+    for row in images:
+        db_path = row['filepath']
+        if os.path.isabs(db_path):
+            try:
+                rel = os.path.relpath(db_path, PROJECT_PARENT_DIR)
+                results.append(rel.replace('\\', '/'))
+            except ValueError:
+                results.append(db_path.replace('\\', '/'))
+        else:
+            results.append(db_path.replace('\\', '/'))
+            
+    random.shuffle(results) 
+    return jsonify(results)
 
-# ==========================================================
-#  ↓↓↓ 核心修复：强制将数据库中的绝对路径转换为相对路径 ↓↓↓
-# ==========================================================
 @app.route('/api/search')
 def api_search():
     conn = get_db_connection()
@@ -164,27 +182,50 @@ def api_search():
     for char in char_filters: where_clauses.append("T0.character_name = ?"); params.append(char)
     if not where_clauses: return jsonify([])
     final_query = f"{base_query} WHERE {' AND '.join(where_clauses)} ORDER BY T0.id DESC LIMIT ? OFFSET ?"; params.extend([limit, offset])
-    cursor = conn.cursor(); cursor.execute(final_query, params)
-    
-    # --- 修复逻辑开始 ---
+    cursor = conn.cursor(); cursor.execute(final_query, params); 
     results = []
     for row in cursor.fetchall():
         db_path = row['filepath']
-        # 如果是绝对路径，计算相对路径
         if os.path.isabs(db_path):
-            try:
-                # 尝试计算相对于 PROJECT_PARENT_DIR 的路径
-                rel_path = os.path.relpath(db_path, PROJECT_PARENT_DIR)
-                results.append(rel_path.replace('\\', '/'))
-            except ValueError:
-                # 如果不在同一个驱动器，保留原样（虽然通常不会发生）
-                results.append(db_path.replace('\\', '/'))
-        else:
-            results.append(db_path.replace('\\', '/'))
-    # --- 修复逻辑结束 ---
-    
+            try: results.append(os.path.relpath(db_path, PROJECT_PARENT_DIR).replace('\\', '/'))
+            except ValueError: results.append(db_path.replace('\\', '/'))
+        else: results.append(db_path.replace('\\', '/'))
     conn.close()
     return jsonify(results)
+
+@app.route('/api/folder_images')
+def api_folder_images():
+    folder_path = request.args.get('path', '')
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', PAGE_SIZE, type=int)
+    offset = (page - 1) * limit
+
+    decoded_path = unquote(folder_path).replace('\\', '/')
+    clean_dir = decoded_path.lstrip('/')
+    if clean_dir.startswith('media/'): clean_dir = clean_dir[6:]
+    elif clean_dir == 'media': clean_dir = ''
+    
+    # 处理绝对路径输入
+    if os.path.isabs(clean_dir):
+        try: clean_dir = os.path.relpath(clean_dir, PROJECT_PARENT_DIR).replace('\\', '/')
+        except ValueError: pass
+    
+    folder_media = []
+    all_media_files = image_files + video_and_gif_files
+    for media_path in all_media_files:
+        img_dir = os.path.dirname(media_path).replace('\\', '/')
+        if img_dir == clean_dir:
+            folder_media.append(media_path)
+            
+    folder_media.sort(key=natural_sort_key)
+    paginated_media = folder_media[offset : offset + limit]
+    
+    return jsonify({
+        "files": paginated_media,
+        "folder_name": clean_dir if clean_dir else "Root",
+        "total": len(folder_media),
+        "has_more": (offset + limit) < len(folder_media)
+    })
 
 # --- 文件服务与管理 ---
 @app.route('/media/<path:filepath>')
@@ -211,7 +252,7 @@ SLIDESHOW_HTML = r"""
 """
 
 FOLDER_VIEW_HTML = r"""
-<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>文件夹: {{ folder_name }}</title><style>{% raw %}
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>文件夹视图</title><style>{% raw %}
     body{margin:0;background-color:#222;font-family:sans-serif}
     .header-nav{position:sticky;top:0;background-color:rgba(20,20,20,.95);padding:10px 15px;z-index:100;display:flex;justify-content:flex-end;align-items:center}
     .header-nav a{color:#fff;text-decoration:none;padding:8px 15px;background-color:rgba(0,0,0,.5);border-radius:5px;margin-left:10px}
@@ -224,59 +265,122 @@ FOLDER_VIEW_HTML = r"""
     .grid-item img.loaded, .grid-item video.loaded{opacity:1}
     .skeleton{position:absolute;top:0;left:0;width:100%;height:100%;background:linear-gradient(90deg,#333 25%,#444 50%,#333 75%);background-size:200% 100%;animation:shimmer 1.5s infinite}
     @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+    #loader{text-align:center;padding:20px;color:#888}
     .modal{display:none;position:fixed;z-index:1000;left:0;top:0;width:100%;height:100%;overflow:hidden;background-color:rgba(0,0,0,.9);align-items:center;justify-content:center}
     .modal-content-container{width:100%;height:100%;display:flex;justify-content:center;align-items:center}
     .modal-content-container img, .modal-content-container video{max-width:95vw;max-height:95vh;object-fit:contain}
     .modal-close{position:absolute;top:20px;right:35px;color:#f1f1f1;font-size:40px;font-weight:700;cursor:pointer}
     .modal-nav{position:absolute;top:50%;transform:translateY(-50%);color:#f1f1f1;font-size:60px;font-weight:700;cursor:pointer;user-select:none;padding:16px}
     .modal-prev{left:0}.modal-next{right:0}
-    .modal-folder-btn{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.6);border:1px solid #fff;color:#fff;padding:8px 16px;border-radius:4px;text-decoration:none;font-size:14px;z-index:1002;transition:background .2s}.modal-folder-btn:hover{background:rgba(255,255,255,0.2)}
-{% endraw %}</style></head><body><div class="header-nav"><a href="/">返回随机</a><a href="/search">搜索</a><a href="/grid">图片网格</a><a href="/tags">角色</a></div><div class="page-title"><h1><span>📁</span>{{ folder_name }}</h1></div>
-<div id="grid-container">
-    {% for file in media_files %}
-    <div class="grid-item" data-index="{{ loop.index0 }}">
-        <div class="skeleton"></div>
-        {% if file.lower().endswith(('.mp4', '.webm', '.mov', '.mkv', '.avi')) %}
-            <video data-index="{{ loop.index0 }}" src="/media/{{ file }}" autoplay loop muted playsinline onloadeddata="this.previousElementSibling.remove(); this.classList.add('loaded')"></video>
-        {% else %}
-            <img data-index="{{ loop.index0 }}" src="/media/{{ file }}" onload="this.previousElementSibling.remove(); this.classList.add('loaded')">
-        {% endif %}
-    </div>
-    {% endfor %}
-</div>
+{% endraw %}</style></head><body data-folder-path="{{ folder_path_encoded }}" data-page-size="{{ PAGE_SIZE }}"><div class="header-nav"><a href="/">返回随机</a><a href="/search">搜索</a><a href="/grid">图片网格</a><a href="/tags">角色</a></div><div class="page-title"><h1 id="pageTitleText"><span>📁</span>加载中...</h1></div>
+<div id="grid-container"></div>
+<div id="loader">正在加载内容...</div>
 <div id="imageModal" class="modal"><span class="modal-close">&times;</span>
-<a id="modalFolderBtn" class="modal-folder-btn" target="_blank">查看所属图集</a>
 <span class="modal-nav modal-prev">&#10094;</span>
 <div class="modal-content-container" id="modalMediaContainer"></div>
 <span class="modal-nav modal-next">&#10095;</span></div>
 <script>{% raw %}
     document.addEventListener("DOMContentLoaded",()=>{
-        const grid=document.getElementById("grid-container"),mod=document.getElementById("imageModal"),mediaContainer=document.getElementById("modalMediaContainer"),closeBtn=document.querySelector(".modal-close"),prevBtn=document.querySelector(".modal-prev"),nextBtn=document.querySelector(".modal-next"),modFolderBtn=document.getElementById("modalFolderBtn");
-        const allMediaItems = Array.from(document.querySelectorAll('.grid-item img, .grid-item video')).map(el => el.getAttribute('src'));
+        const grid=document.getElementById("grid-container"),loader=document.getElementById("loader"),titleText=document.getElementById("pageTitleText"),mod=document.getElementById("imageModal"),mediaContainer=document.getElementById("modalMediaContainer"),closeBtn=document.querySelector(".modal-close"),prevBtn=document.querySelector(".modal-prev"),nextBtn=document.querySelector(".modal-next");
+        const folderPath = document.body.dataset.folderPath;
+        const batchSize = parseInt(document.body.dataset.pageSize);
+        
+        let allImages=[];
+        let currentPage=1;
+        let isLoading=false;
+        let noMoreData=false;
         let currIdx = -1;
+
+        async function loadResults(){
+            if(isLoading || noMoreData) return;
+            isLoading = true;
+            loader.textContent = "正在加载...";
+            try {
+                const params = new URLSearchParams({path: folderPath, page: currentPage, limit: batchSize});
+                const response = await fetch(`/api/folder_images?${params.toString()}`);
+                const data = await response.json();
+                
+                titleText.innerHTML = `<span>📁</span>${data.folder_name}`;
+                
+                if(!data.files || data.files.length === 0){
+                    noMoreData = true;
+                    loader.textContent = allImages.length === 0 ? "该文件夹为空。" : "已加载全部内容";
+                    if(observer) observer.disconnect();
+                    return;
+                }
+                
+                const startIdx = allImages.length;
+                allImages.push(...data.files);
+                
+                data.files.forEach((path, i) => {
+                    const item = document.createElement("div");
+                    item.className = "grid-item";
+                    const skel = document.createElement("div");
+                    skel.className = "skeleton";
+                    item.appendChild(skel);
+                    
+                    const idx = startIdx + i;
+                    item.dataset.index = idx;
+                    
+                    const isVid = path.toLowerCase().match(/\.(mp4|webm|mov|mkv|avi)$/);
+                    let el;
+                    if(isVid){
+                        el = document.createElement("video");
+                        el.autoplay = true; el.loop = true; el.muted = true; el.playsInline = true;
+                    } else {
+                        el = document.createElement("img");
+                    }
+                    
+                    el.dataset.index = idx;
+                    el.src = `/media/${path}`;
+                    const loadEv = isVid ? "onloadeddata" : "onload";
+                    el[loadEv] = () => {
+                        if(item.contains(skel)) item.removeChild(skel);
+                        el.classList.add("loaded");
+                    };
+                    item.appendChild(el);
+                    grid.appendChild(item);
+                });
+                
+                currentPage++;
+                if(!data.has_more) {
+                    noMoreData = true;
+                    loader.textContent = "已加载全部内容";
+                    observer.disconnect();
+                }
+            } catch(err) {
+                console.error("Error:", err);
+                loader.textContent = "加载失败。";
+            } finally {
+                isLoading = false;
+            }
+        }
+
+        const observer = new IntersectionObserver((entries) => {
+            if(entries[0].isIntersecting) loadResults();
+        }, {rootMargin: "400px"});
+        observer.observe(loader);
 
         function openMod(idx){
             currIdx=parseInt(idx);
-            const path = allMediaItems[currIdx];
+            const path = allImages[currIdx];
             const isVideo = path.toLowerCase().match(/\.(mp4|webm|mov|mkv|avi)$/);
             mediaContainer.innerHTML = '';
             let el;
             if (isVideo) {
                 el = document.createElement('video');
-                el.src = path;
+                el.src = `/media/${path}`;
                 el.autoplay = true; el.loop = true; el.muted = true; el.playsInline = true; el.controls = true;
             } else {
                 el = document.createElement('img');
-                el.src = path;
+                el.src = `/media/${path}`;
             }
             mediaContainer.appendChild(el);
             mod.style.display="flex";document.body.style.overflow="hidden";
-            const lastSlash=path.lastIndexOf('/');
-            if(lastSlash>-1){const f=path.substring(0,lastSlash);modFolderBtn.href=`/folder/${encodeURIComponent(f.replace('/media/',''))}`;modFolderBtn.style.display="block"}else{modFolderBtn.style.display="none"}
         }
         function closeMod(){mod.style.display="none";document.body.style.overflow="";mediaContainer.innerHTML=''}
-        function nextMod(){if(allMediaItems.length){currIdx=(currIdx+1)%allMediaItems.length;openMod(currIdx)}}
-        function prevMod(){if(allMediaItems.length){currIdx=(currIdx-1+allMediaItems.length)%allMediaItems.length;openMod(currIdx)}}
+        function nextMod(){if(allImages.length){currIdx=(currIdx+1)%allImages.length;openMod(currIdx)}}
+        function prevMod(){if(allImages.length){currIdx=(currIdx-1+allImages.length)%allImages.length;openMod(currIdx)}}
 
         grid.addEventListener("click",e=>{
             const target = e.target.closest('[data-index]');
@@ -297,7 +401,7 @@ GRID_HTML=r"""
 <a id="modalFolderBtn" class="modal-folder-btn" target="_blank">查看所属图集</a>
 <span class="modal-nav modal-prev">&#10094;</span><img class="modal-content" id="modalImage"><span class="modal-nav modal-next">&#10095;</span></div><script>{% raw %}const grid=document.getElementById("grid-container"),loader=document.getElementById("loader"),imageModal=document.getElementById("imageModal"),modalImage=document.getElementById("modalImage"),closeBtn=document.querySelector(".modal-close"),prevBtn=document.querySelector(".modal-prev"),nextBtn=document.querySelector(".modal-next"),modFolderBtn=document.getElementById("modalFolderBtn");let allImages=[],currentIndex=0,currentModalImageIndex=-1;const BATCH_SIZE=30;function loadMoreImages(){if(currentIndex>=allImages.length){loader.textContent="已加载全部";return}const t=allImages.slice(currentIndex,currentIndex+BATCH_SIZE);for(const[e,a]of t.entries()){const t=document.createElement("div");t.className="grid-item";const n=document.createElement("div");n.className="skeleton",t.appendChild(n);const d=document.createElement("img"),o=currentIndex+e;t.dataset.index=o,d.dataset.index=o,d.onload=()=>{t.removeChild(n),d.classList.add("loaded")},d.src=`/media/${a}`,t.appendChild(d),grid.appendChild(t)}currentIndex+=BATCH_SIZE}function openModal(e){currentModalImageIndex=parseInt(e);const path=allImages[currentModalImageIndex];modalImage.src=`/media/${path}`;imageModal.style.display="flex";document.body.style.overflow="hidden";
 const normalizedPath = path.replace(/\\/g, '/');
-const lastSlash=normalizedPath.lastIndexOf('/');if(lastSlash>-1){const f=normalizedPath.substring(0,lastSlash);modFolderBtn.href=`/folder/${encodeURIComponent(f)}`;modFolderBtn.style.display="block"}else{modFolderBtn.style.display="none"}
+const lastSlash=normalizedPath.lastIndexOf('/');if(lastSlash>-1){let f=normalizedPath.substring(0,lastSlash);if(f.startsWith('/'))f=f.substring(1);modFolderBtn.href=`/folder/${encodeURIComponent(f)}`;modFolderBtn.style.display="block"}else{modFolderBtn.style.display="none"}
 }function closeModal(){imageModal.style.display="none",document.body.style.overflow=""}function showNextImage(){currentModalImageIndex=(currentModalImageIndex+1)%allImages.length,openModal(currentModalImageIndex)}function showPrevImage(){currentModalImageIndex=(currentModalImageIndex-1+allImages.length)%allImages.length,openModal(currentModalImageIndex)}async function initializeGrid(){try{const e=await fetch("/api/images");if(allImages=await e.json(),0===allImages.length)return void(loader.textContent="未找到任何图片。");loadMoreImages();new IntersectionObserver(e=>{e[0].isIntersecting&&loadMoreImages()},{rootMargin:"200px"}).observe(loader)}catch(e){console.error("无法初始化网格:",e),loader.textContent="加载图片列表失败。"}}grid.addEventListener("click",e=>{e.target.dataset.index&&openModal(e.target.dataset.index)}),closeBtn.addEventListener("click",closeModal),prevBtn.addEventListener("click",showPrevImage),nextBtn.addEventListener("click",showNextImage),document.addEventListener("keydown",e=>{"flex"===imageModal.style.display&&("Escape"===e.key?closeModal():"ArrowRight"===e.key?showNextImage():"ArrowLeft"===e.key&&showPrevImage())}),imageModal.addEventListener("click",e=>{if(e.target===imageModal)closeModal()}),document.addEventListener("DOMContentLoaded",initializeGrid);{% endraw %}</script></body></html>
 """
 
@@ -307,7 +411,7 @@ VIDEO_GRID_HTML=r"""<!DOCTYPE html><html lang="zh-CN"><head><title>视频/GIF �
 <a id="modalFolderBtn" class="modal-folder-btn" target="_blank">查看所属图集</a>
 <span class="modal-nav modal-prev">&#10094;</span><div class="modal-content-container" id="modalMediaContainer"></div><span class="modal-nav modal-next">&#10095;</span></div><script>{% raw %}const grid=document.getElementById("grid-container"),loader=document.getElementById("loader"),mediaModal=document.getElementById("mediaModal"),modalMediaContainer=document.getElementById("modalMediaContainer"),modFolderBtn=document.getElementById("modalFolderBtn");let allMedia=[],currentIndex=0,currentModalIndex=-1;const BATCH_SIZE=20;function createMediaElement(e,t){const a=e.toLowerCase().endsWith(".gif");let l;if(a)l=document.createElement("img");else{l=document.createElement("video"),l.loop=!0,l.playsinline=!0,t?(l.autoplay=!0,l.muted=!0):(l.autoplay=!0,l.controls=!0,l.muted=!0)}return l.src=`/media/${e}`,l}function loadMoreMedia(){if(currentIndex>=allMedia.length){loader.textContent="已加载全部";return}const e=allMedia.slice(currentIndex,currentIndex+BATCH_SIZE);for(const[t,a]of e.entries()){const e=document.createElement("div");e.className="grid-item";const n=document.createElement("div");n.className="skeleton",e.appendChild(n);const d=currentIndex+t;e.dataset.index=d;const i=createMediaElement(a,!0);e.appendChild(i);const o=i.tagName.toLowerCase();"video"===o?i.onloadeddata=()=>{e.contains(n)&&e.removeChild(n),i.classList.add("loaded")}:i.onload=()=>{e.contains(n)&&e.removeChild(n),i.classList.add("loaded")},grid.appendChild(e)}currentIndex+=BATCH_SIZE}function openModal(e){currentModalIndex=parseInt(e);const t=allMedia[currentModalIndex];modalMediaContainer.innerHTML="";const a=createMediaElement(t,!1);modalMediaContainer.appendChild(a),mediaModal.style.display="block",document.body.style.overflow="hidden";
 const normalizedPath = t.replace(/\\/g, '/');
-const lastSlash=normalizedPath.lastIndexOf('/');if(lastSlash>-1){const f=normalizedPath.substring(0,lastSlash);modFolderBtn.href=`/folder/${encodeURIComponent(f)}`;modFolderBtn.style.display="block"}else{modFolderBtn.style.display="none"}
+const lastSlash=normalizedPath.lastIndexOf('/');if(lastSlash>-1){let f=normalizedPath.substring(0,lastSlash);if(f.startsWith('/'))f=f.substring(1);modFolderBtn.href=`/folder/${encodeURIComponent(f)}`;modFolderBtn.style.display="block"}else{modFolderBtn.style.display="none"}
 }function closeModal(){mediaModal.style.display="none",modalMediaContainer.innerHTML="",document.body.style.overflow=""}function showAdjacentMedia(e){if(-1===currentModalIndex)return;currentModalIndex=(currentModalIndex+e+allMedia.length)%allMedia.length,openModal(currentModalIndex)}async function initializeGrid(){try{const e=await fetch("/api/videos");if(allMedia=await e.json(),0===allMedia.length)return void(loader.textContent="未找到任何视频或GIF。");loadMoreMedia();new IntersectionObserver(e=>{e[0].isIntersecting&&loadMoreMedia()},{rootMargin:"400px"}).observe(loader)}catch(e){console.error("无法初始化网格:",e),loader.textContent="加载列表失败。"}}grid.addEventListener("click",e=>{const t=e.target.closest(".grid-item");t&&t.dataset.index&&openModal(t.dataset.index)}),document.querySelector(".modal-close").addEventListener("click",closeModal),document.querySelector(".modal-prev").addEventListener("click",()=>showAdjacentMedia(-1)),document.querySelector(".modal-next").addEventListener("click",()=>showAdjacentMedia(1)),document.addEventListener("keydown",e=>{"block"===mediaModal.style.display&&("Escape"===e.key?closeModal():"ArrowRight"===e.key?showAdjacentMedia(1):"ArrowLeft"===e.key&&showAdjacentMedia(-1))}),mediaModal.addEventListener("click",e=>{if(e.target===mediaModal||e.target===modalMediaContainer)closeModal()}),document.addEventListener("DOMContentLoaded",initializeGrid);{% endraw %}</script></body></html>"""
 TAGS_INDEX_HTML=r"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>角色标签</title><style>{% raw %}body{margin:0;background-color:#222;font-family:sans-serif}.header{position:sticky;top:0;background-color:rgba(20,20,20,.95);padding:15px;z-index:100;display:flex;align-items:center;gap:15px}.header .nav{margin-left:auto}.header a{color:#fff;text-decoration:none;padding:8px 15px;background-color:rgba(0,0,0,.5);border-radius:5px;margin-left:10px}#search-box{padding:8px 12px;font-size:1em;border-radius:5px;border:1px solid #555;background-color:#333;color:#fff;width:250px}#grid-container{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:15px;padding:15px}.character-card{display:block;position:relative;border-radius:8px;overflow:hidden;aspect-ratio:3/4;background-size:cover;background-position:center;text-decoration:none;color:#fff;transition:transform .2s ease-out;background-color:#333}.character-card:hover{transform:scale(1.03)}.character-card::after{content:'';position:absolute;top:0;left:0;width:100%;height:100%;background:linear-gradient(to top,rgba(0,0,0,.8) 0%,rgba(0,0,0,0) 50%)}.character-name{position:absolute;bottom:10px;left:15px;font-size:1.2em;font-weight:700;z-index:1;text-shadow:1px 1px 3px rgba(0,0,0,.7)}#loader{text-align:center;padding:20px;color:#888}{% endraw %}</style></head><body><div class="header"><input type="search" id="search-box" placeholder="搜索角色..."><div class="nav"><a href="/search">搜索</a><a href="/">随机</a><a href="/slideshow">幻灯片</a><a href="/grid">图片网格</a><a href="/videos">视频/GIF</a><a href="/rescan">扫描</a></div></div><div id="grid-container"></div><div id="loader">正在加载角色列表...</div><script>{% raw %}
         const grid = document.getElementById('grid-container');
@@ -382,7 +486,7 @@ CHARACTER_GALLERY_HTML=r"""
     <span class="modal-nav modal-prev">&#10094;</span><img class="modal-content" id="modalImage"><span class="modal-nav modal-next">&#10095;</span></div><script>{% raw %}
     document.addEventListener("DOMContentLoaded",()=>{const e=document.body.dataset.characterName;const grid=document.getElementById("grid-container"),loader=document.getElementById("loader"),imageModal=document.getElementById("imageModal"),modalImage=document.getElementById("modalImage"),closeBtn=document.querySelector(".modal-close"),prevBtn=document.querySelector(".modal-prev"),nextBtn=document.querySelector(".modal-next"),modFolderBtn=document.getElementById("modalFolderBtn");let allImages=[],currentModalImageIndex=-1;async function initialize(){try{const r=await fetch(`/api/character_images/${e}`);if(allImages=await r.json(),0===allImages.length)return void(loader.textContent="未找到该角色的任何图片。");loader.style.display="none";for(const[t,a]of allImages.entries()){const n=document.createElement("div");n.className="grid-item";const d=document.createElement("div");d.className="skeleton",n.appendChild(d);const i=document.createElement("img");n.dataset.index=t,i.dataset.index=t,i.onload=()=>{n.contains(d)&&n.removeChild(d),i.classList.add("loaded")},i.src=`/media/${a}`,n.appendChild(i),grid.appendChild(n)}}catch(r){console.error("无法加载图片:",r),loader.textContent="加载失败。"}}function openModal(e){currentModalImageIndex=parseInt(e);const path=allImages[currentModalImageIndex];modalImage.src=`/media/${path}`;imageModal.style.display="flex";document.body.style.overflow="hidden";
     const normalizedPath = path.replace(/\\/g, '/');
-    const lastSlash=normalizedPath.lastIndexOf('/');if(lastSlash>-1){const f=normalizedPath.substring(0,lastSlash);modFolderBtn.href=`/folder/${encodeURIComponent(f)}`;modFolderBtn.style.display="block"}else{modFolderBtn.style.display="none"}}function closeModal(){imageModal.style.display="none";document.body.style.overflow=""}function showNextImage(){if(allImages.length)currentModalImageIndex=(currentModalImageIndex+1)%allImages.length,openModal(currentModalImageIndex)}function showPrevImage(){if(allImages.length)currentModalImageIndex=(currentModalImageIndex-1+allImages.length)%allImages.length,openModal(currentModalImageIndex)}initialize();grid.addEventListener("click",e=>{e.target.dataset.index&&openModal(e.target.dataset.index)}),closeBtn.addEventListener("click",closeModal),prevBtn.addEventListener("click",showPrevImage),nextBtn.addEventListener("click",showNextImage),document.addEventListener("keydown",e=>{"flex"===imageModal.style.display&&("Escape"===e.key?closeModal():"ArrowRight"===e.key?showNextImage():"ArrowLeft"===e.key&&showPrevImage())}),imageModal.addEventListener("click",e=>{if(e.target===imageModal)closeModal()})});{% endraw %}</script></body></html>"""
+    const lastSlash=normalizedPath.lastIndexOf('/');if(lastSlash>-1){let f=normalizedPath.substring(0,lastSlash);if(f.startsWith('/'))f=f.substring(1);modFolderBtn.href=`/folder/${encodeURIComponent(f)}`;modFolderBtn.style.display="block"}else{modFolderBtn.style.display="none"}}function closeModal(){imageModal.style.display="none";document.body.style.overflow=""}function showNextImage(){if(allImages.length)currentModalImageIndex=(currentModalImageIndex+1)%allImages.length,openModal(currentModalImageIndex)}function showPrevImage(){if(allImages.length)currentModalImageIndex=(currentModalImageIndex-1+allImages.length)%allImages.length,openModal(currentModalImageIndex)}initialize();grid.addEventListener("click",e=>{e.target.dataset.index&&openModal(e.target.dataset.index)}),closeBtn.addEventListener("click",closeModal),prevBtn.addEventListener("click",showPrevImage),nextBtn.addEventListener("click",showNextImage),document.addEventListener("keydown",e=>{"flex"===imageModal.style.display&&("Escape"===e.key?closeModal():"ArrowRight"===e.key?showNextImage():"ArrowLeft"===e.key&&showPrevImage())}),imageModal.addEventListener("click",e=>{if(e.target===imageModal)closeModal()})});{% endraw %}</script></body></html>"""
 SEARCH_PAGE_HTML=r"""
 <!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>标签搜索</title><style>{% raw %}body{margin:0;background-color:#222;font-family:sans-serif}.header{position:sticky;top:0;background-color:rgba(20,20,20,.95);padding:10px 15px;z-index:100;display:flex;align-items:center;gap:15px}.header .search-form{display:flex;flex-grow:1}.header #search-box{flex-grow:1;padding:10px 15px;font-size:1.1em;border-radius:5px 0 0 5px;border:1px solid #555;background-color:#333;color:#fff;border-right:none}.header #search-button{padding:10px 20px;font-size:1.1em;border-radius:0 5px 5px 0;border:1px solid #555;background-color:#444;color:#fff;cursor:pointer}.header .nav{margin-left:auto;white-space:nowrap}.header .nav a{color:#fff;text-decoration:none;padding:8px 15px;background-color:rgba(0,0,0,.5);border-radius:5px;margin-left:10px}#grid-container{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;padding:10px}.grid-item{position:relative;border-radius:8px;cursor:pointer;background-color:#333;aspect-ratio:3/4;overflow:hidden}.grid-item img, .grid-item video{width:100%;height:100%;display:block;object-fit:cover;opacity:0;transition:opacity .5s}.grid-item img.loaded, .grid-item video.loaded{opacity:1}.skeleton{position:absolute;top:0;left:0;width:100%;height:100%;background:linear-gradient(90deg,#333 25%,#444 50%,#333 75%);background-size:200% 100%;animation:shimmer 1.5s infinite}@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}#loader{text-align:center;padding:20px;color:#888}.modal{display:none;position:fixed;z-index:1000;left:0;top:0;width:100%;height:100%;overflow:hidden;background-color:rgba(0,0,0,.9);align-items:center;justify-content:center}.modal-content-container{width:100%;height:100%;display:flex;justify-content:center;align-items:center}.modal-content-container img,.modal-content-container video{max-width:95vw;max-height:95vh;object-fit:contain}.modal-close{position:absolute;top:20px;right:35px;color:#f1f1f1;font-size:40px;font-weight:700;cursor:pointer}.modal-nav{position:absolute;top:50%;transform:translateY(-50%);color:#f1f1f1;font-size:60px;font-weight:700;cursor:pointer;user-select:none;padding:16px}.modal-prev{left:0}.modal-next{right:0}
 .modal-folder-btn{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.6);border:1px solid #fff;color:#fff;padding:8px 16px;border-radius:4px;text-decoration:none;font-size:14px;z-index:1002;transition:background .2s}.modal-folder-btn:hover{background:rgba(255,255,255,0.2)}
@@ -391,7 +495,7 @@ SEARCH_PAGE_HTML=r"""
 <span class="modal-nav modal-prev">&#10094;</span><div class="modal-content-container" id="modalMediaContainer"></div><span class="modal-nav modal-next">&#10095;</span></div><script>{% raw %}
     document.addEventListener("DOMContentLoaded",()=>{const grid=document.getElementById("grid-container"),loader=document.getElementById("loader"),searchForm=document.getElementById("search-form"),searchBox=document.getElementById("search-box"),batchSize=parseInt(document.body.dataset.pageSize),mod=document.getElementById("imageModal"),mediaContainer=document.getElementById("modalMediaContainer"),closeBtn=document.querySelector(".modal-close"),prevBtn=document.querySelector(".modal-prev"),nextBtn=document.querySelector(".modal-next"),modFolderBtn=document.getElementById("modalFolderBtn");let allImages=[],currentPage=1,isLoading=!1,noMoreData=!1,currentQuery="",currIdx=-1;async function loadResults(){if(isLoading||noMoreData||!currentQuery)return;isLoading=!0;loader.textContent="正在加载...";try{const p=new URLSearchParams({q:currentQuery,page:currentPage,limit:batchSize});const r=await fetch(`/api/search?${p.toString()}`);const d=await r.json();if(0===d.length){noMoreData=!0;loader.textContent=0===allImages.length?"未找到匹配的图片。":"已加载全部结果";if(observer)observer.disconnect();return}const startIdx=allImages.length;allImages.push(...d);d.forEach((path,i)=>{const item=document.createElement("div");item.className="grid-item";const skel=document.createElement("div");skel.className="skeleton";item.appendChild(skel);const idx=startIdx+i;item.dataset.index=idx;const isVid=path.toLowerCase().match(/\.(mp4|webm|mov|mkv|avi)$/);let el;if(isVid){el=document.createElement("video");el.loop=!0;el.playsInline=!0;el.muted=!0;el.autoplay=!0}else{el=document.createElement("img")}el.dataset.index=idx;el.src=`/media/${path}`;const loadEv=isVid?"onloadeddata":"onload";el[loadEv]=()=>{if(item.contains(skel))item.removeChild(skel);el.classList.add("loaded")};item.appendChild(el);grid.appendChild(item)});currentPage++}catch(err){console.error("Error:",err);loader.textContent="加载失败。"}finally{isLoading=!1}}const observer=new IntersectionObserver(e=>{if(e[0].isIntersecting)loadResults()},{rootMargin:"400px"});function doSearch(q){q=q.trim();if(q===currentQuery&&allImages.length>0)return;currentQuery=q;history.pushState(null,"",`/search?q=${encodeURIComponent(q)}`);grid.innerHTML="";allImages=[];currentPage=1;isLoading=!1;noMoreData=!1;observer.disconnect();if(currentQuery){loadResults();observer.observe(loader)}else{loader.textContent="输入标签以开始搜索"}}function openMod(idx){currIdx=parseInt(idx);const path=allImages[currIdx];const isVideo=path.toLowerCase().match(/\.(mp4|webm|mov|mkv|avi)$/);mediaContainer.innerHTML='';let el;if(isVideo){el=document.createElement('video');el.src=`/media/${path}`;el.autoplay=!0;el.loop=!0;el.muted=!0;el.playsInline=!0;el.controls=!0}else{el=document.createElement('img');el.src=`/media/${path}`}mediaContainer.appendChild(el);mod.style.display="flex";document.body.style.overflow="hidden";
     const normalizedPath = path.replace(/\\/g, '/');
-    const lastSlash=normalizedPath.lastIndexOf('/');if(lastSlash>-1){const f=normalizedPath.substring(0,lastSlash);modFolderBtn.href=`/folder/${encodeURIComponent(f)}`;modFolderBtn.style.display="block"}else{modFolderBtn.style.display="none"}}function closeMod(){mod.style.display="none";document.body.style.overflow="";mediaContainer.innerHTML=''}function nextMod(){if(allImages.length){currIdx=(currIdx+1)%allImages.length;openMod(currIdx)}}function prevMod(){if(allImages.length){currIdx=(currIdx-1+allImages.length)%allImages.length;openMod(currIdx)}}searchForm.addEventListener("submit",e=>{e.preventDefault();doSearch(searchBox.value)});grid.addEventListener("click",e=>{const t=e.target.closest(".grid-item");if(t&&t.dataset.index)openMod(t.dataset.index)});closeBtn.addEventListener("click",closeMod);prevBtn.addEventListener("click",prevMod);nextBtn.addEventListener("click",nextMod);mod.addEventListener("click",e=>{if(e.target===mod||e.target===mediaContainer)closeMod()});document.addEventListener("keydown",e=>{if(mod.style.display==="flex"){if(e.key==="Escape")closeMod();else if(e.key==="ArrowRight")nextMod();else if(e.key==="ArrowLeft")prevMod()}});const initQ=document.body.dataset.query;if(initQ){searchBox.value=initQ;doSearch(initQ)}});
+    const lastSlash=normalizedPath.lastIndexOf('/');if(lastSlash>-1){let f=normalizedPath.substring(0,lastSlash);if(f.startsWith('/'))f=f.substring(1);modFolderBtn.href=`/folder/${encodeURIComponent(f)}`;modFolderBtn.style.display="block"}else{modFolderBtn.style.display="none"}}function closeMod(){mod.style.display="none";document.body.style.overflow="";mediaContainer.innerHTML=''}function nextMod(){if(allImages.length){currIdx=(currIdx+1)%allImages.length;openMod(currIdx)}}function prevMod(){if(allImages.length){currIdx=(currIdx-1+allImages.length)%allImages.length;openMod(currIdx)}}searchForm.addEventListener("submit",e=>{e.preventDefault();doSearch(searchBox.value)});grid.addEventListener("click",e=>{const t=e.target.closest(".grid-item");if(t&&t.dataset.index)openMod(t.dataset.index)});closeBtn.addEventListener("click",closeMod);prevBtn.addEventListener("click",prevMod);nextBtn.addEventListener("click",nextMod);mod.addEventListener("click",e=>{if(e.target===mod||e.target===mediaContainer)closeMod()});document.addEventListener("keydown",e=>{if(mod.style.display==="flex"){if(e.key==="Escape")closeMod();else if(e.key==="ArrowRight")nextMod();else if(e.key==="ArrowLeft")prevMod()}});const initQ=document.body.dataset.query;if(initQ){searchBox.value=initQ;doSearch(initQ)}});
 {% endraw %}</script></body></html>"""
 
 # --- 启动服务器 ---
