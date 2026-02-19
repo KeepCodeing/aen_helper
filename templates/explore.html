@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+<div x-data="{ showNav: true, lastScrollY: 0 }" @scroll.window="handleScroll" x-cloak>
+
+    <div class="nav" :class="{ 'nav-hidden': !showNav }">
+        <div class="nav-group left">
+            {% if current_path %}
+                {% if parent_path %}
+                    <a href="/explore/{{ parent_path }}">⬅ 返回上一级</a>
+                {% else %}
+                    <a href="/explore">⬅ 返回根目录</a>
+                {% endif %}
+            {% else %}
+                <a href="/">🏠 首页</a>				
+            {% endif %}
+            <div class="nav-title" title="{{ page_title }}">{{ page_title }}</div>
+			<span style="color: #444;">|</span>
+			<a href="/grid">图片</a>
+			<a href="/videos">视频</a>
+			<a href="/tags">角色</a>
+        </div>
+        
+        <div class="nav-group right">
+            {% if has_immediate_files %}
+                <a href="/folder/{{ current_path }}" class="folder-btn">🖼️ 查看本层图片</a>
+            {% else %}
+                <a href="/grid" class="folder-btn">全部图片</a>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="grid-container char-grid" style="padding-top: 60px;">
+        {% for folder in folders %}
+            <a href="{{ '/explore/' + folder.path if folder.has_sub else '/folder/' + folder.path }}" class="char-card">
+                
+                <div class="char-cover">
+                    <img src="/media/{{ folder.cover }}" loading="lazy" onload="this.classList.add('loaded')">
+                    <div class="char-overlay"></div>
+                    
+                    {% if folder.has_sub %}
+                        <div class="mobile-folder-hint">📂</div>
+                    {% endif %}
+                </div>
+                
+                <div class="char-info">
+                    <div class="char-name">{{ folder.name }}</div>
+                    <div class="char-count">{{ folder.count }} 项内容</div>
+                </div>
+            </a>
+        {% endfor %}
+        
+        {% if not folders %}
+            <div class="loader-trigger" style="grid-column: 1 / -1; text-align: center; margin-top: 50px;">
+                <span style="color: #666;">目录为空或只有零散图片</span>
+            </div>
+        {% endif %}
+    </div>
+
+</div>
+
+<style>
+    /* 核心网格样式 (兼容原本的 char-grid) */
+    .char-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 20px;
+        padding: 20px;
+    }
+    .char-card {
+        position: relative; display: block; aspect-ratio: 2 / 3; border-radius: 8px; overflow: hidden;
+        text-decoration: none; background: #1a1a1a; transition: transform 0.2s, box-shadow 0.2s; border: 1px solid #333;
+    }
+    .char-card:hover { transform: translateY(-5px); box-shadow: 0 5px 15px rgba(0,0,0,0.5); border-color: #666; }
+    
+    .char-cover { width: 100%; height: 100%; position: relative; }
+    .char-cover img { width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.5s; }
+    .char-cover img.loaded { opacity: 1; }
+    .char-overlay { position: absolute; bottom: 0; left: 0; width: 100%; height: 60%; background: linear-gradient(to top, rgba(0,0,0,0.95), transparent); }
+    
+    .char-info { position: absolute; bottom: 0; left: 0; width: 100%; padding: 12px; box-sizing: border-box; }
+    .char-name { color: #fff; font-weight: bold; font-size: 1.1em; text-shadow: 0 1px 2px rgba(0,0,0,1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
+    .char-count { color: #ccc; font-size: 0.85em; }
+
+    /* 右下角文件夹标识徽章 */
+    .mobile-folder-hint {
+        position: absolute;
+        bottom: 60px; /* 悬浮在文本上方 */
+        right: 10px;
+        width: 32px;
+        height: 32px;
+        background-color: rgba(0, 0, 0, 0.65);
+        backdrop-filter: blur(4px);
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        z-index: 20;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+    }
+</style>
+
+<script>
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('handleScroll', function() {
+            return function() {
+                const currentScrollY = window.pageYOffset || document.documentElement.scrollTop;
+                if (currentScrollY > this.lastScrollY && currentScrollY > 50) {
+                    this.showNav = false;
+                } else {
+                    this.showNav = true;
+                }
+                this.lastScrollY = currentScrollY;
+            }
+        });
+    });
+</script>
+{% endblock %}

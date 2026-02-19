@@ -8,7 +8,7 @@ from flask import Blueprint, render_template, jsonify, request, send_file, redir
 # 引入本地配置和工具
 from config import PROJECT_PARENT_DIR, DB_PATH, PAGE_SIZE
 # [核心修改] 引入 to_web_path
-from utils import MediaState, scan_media_files, get_paginated_list, get_db_connection, natural_sort_key, to_web_path, get_character_groups, get_folders_by_character, DBCache, search_files_paged, search_folders
+from utils import MediaState, scan_media_files, get_paginated_list, get_db_connection, natural_sort_key, to_web_path, get_character_groups, get_folders_by_character, DBCache, search_files_paged, search_folders, get_directory_tree
 
 # 创建蓝图
 main_bp = Blueprint('main', __name__)
@@ -252,3 +252,30 @@ def serve_media(filepath):
         return send_file(absolute_path)
     else:
         return "File not found", 404
+        
+@main_bp.route('/explore')
+@main_bp.route('/explore/<path:subpath>')
+def explore_page(subpath=""):
+    folders, immediate_files = get_directory_tree(subpath)
+    
+    # 【核心逻辑】：如果当前目录下全是文件，没有子文件夹了（倒数第二级）
+    # 自动重定向到现有的图片网格页进行浏览
+    if not folders and immediate_files:
+        # 直接跳转到该文件夹的图片流 (调用已有的 /folder/ 路由)
+        return redirect(f"/folder/{urllib.parse.quote(subpath)}")
+        
+    # 计算用于“返回上一级”的父路径
+    parent_path = ""
+    if subpath:
+        parts = subpath.rstrip('/').split('/')
+        if len(parts) > 1:
+            parent_path = '/'.join(parts[:-1])
+        else:
+            parent_path = ""
+            
+    return render_template('explore.html', 
+                           folders=folders, 
+                           has_immediate_files=len(immediate_files) > 0,
+                           current_path=subpath,
+                           parent_path=parent_path,
+                           page_title=f"目录: {subpath}" if subpath else "本地目录")

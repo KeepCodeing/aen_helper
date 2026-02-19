@@ -365,3 +365,49 @@ def search_folders(query_str):
     except Exception as e:
         print(f"Search folders error: {e}"); return []
     finally: conn.close()
+    
+def get_directory_tree(current_path=""):
+    """获取指定相对路径下的子文件夹列表与文件状态"""
+    # 统一路径分隔符并去掉首尾斜杠
+    current_path = current_path.replace('\\', '/').strip("/")
+    folders = {}
+    immediate_files = []
+
+    prefix = current_path + "/" if current_path else ""
+    
+    # 【修复】：将所有的图片和视频列表合并遍历
+    all_media_files = MediaState.image_files + MediaState.video_and_gif_files
+    
+    for f in all_media_files:
+        f_normalized = f.replace("\\", "/")
+        if current_path == "" or f_normalized.startswith(prefix):
+            remainder = f_normalized[len(prefix):] if prefix else f_normalized
+            parts = remainder.split('/')
+            
+            if len(parts) == 1:
+                # 只有一级，说明是直接放在当前目录下的图片/视频
+                immediate_files.append(remainder)
+            else:
+                # 说明存在子文件夹
+                folder_name = parts[0]
+                if folder_name not in folders:
+                    folders[folder_name] = {
+                        'name': folder_name,
+                        'path': prefix + folder_name,
+                        'cover': f_normalized, # 默认用内部第一张图当封面
+                        'has_sub': False,      # 是否还有下一级文件夹
+                        'has_img': False,      # 这个子文件夹里是否有直接的图片
+                        'count': 0
+                    }
+                
+                folders[folder_name]['count'] += 1
+                
+                # 深度判断
+                if len(parts) > 2:
+                    folders[folder_name]['has_sub'] = True
+                elif len(parts) == 2:
+                    folders[folder_name]['has_img'] = True
+    
+    # 按自然拼写顺序排序
+    folder_list = sorted(list(folders.values()), key=lambda x: natural_sort_key(x['name']))
+    return folder_list, immediate_files
