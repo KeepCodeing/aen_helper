@@ -10,21 +10,28 @@
 
     <div class="nav" :class="{ 'nav-hidden': !showNav }">
         <div class="nav-group left">
-            <a href="/">🏠 首页</a>
+            {% if character_name %}
+                <a href="/tags">⬅ 返回角色</a>
+            {% elif is_search %}
+                <a href="/tags">⬅ 标签索引</a>
+            {% else %}
+                <a href="/">🏠 首页</a>
+            {% endif %}
+            
             <span style="color: #444;">|</span>
             <div class="nav-title" title="{{ page_title }}">{{ page_title }}</div>
             
-            <a href="/grid" x-show="!baseApiUrl.includes('/api/images')">图片</a>
-            <a href="/videos" x-show="!baseApiUrl.includes('/api/videos')">视频</a>
-            <a href="/tags">角色</a>
+            {% if not character_name and not is_search %}
+                <a href="/grid" x-show="!baseApiUrl.includes('/api/images')">图片</a>
+                <a href="/videos" x-show="!baseApiUrl.includes('/api/videos')">视频</a>
+                <a href="/tags">角色</a>
+            {% endif %}
         </div>
         <div class="nav-group right">
             {% if character_name %}
-                <a href="/tags/folders/{{ character_name }}" class="folder-btn">📂 文件夹模式</a>
+                <a href="/tags/folders/{{ character_name }}" class="folder-btn" @click.prevent="window.location.replace($el.href)">📂 文件夹模式</a>
             {% elif is_search and search_query %}
-                <a href="/search/folders?q={{ search_query }}" class="folder-btn">📂 文件夹模式</a>
-            {% else %}
-                <a href="/search" class="folder-btn">🔍 搜索</a>
+                <a href="/search/folders?q={{ search_query }}" class="folder-btn" @click.prevent="window.location.replace($el.href)">📂 文件夹模式</a>
             {% endif %}
         </div>
     </div>

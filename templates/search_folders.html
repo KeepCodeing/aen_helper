@@ -12,8 +12,10 @@
             <div class="nav-title">搜索结果 (文件夹): {{ search_query }}</div>
         </div>
 		<div class="nav-group right">
-			<a :href="'/search?q=' + encodeURIComponent(query)" class="folder-btn">🖼️ 全部图片</a>
-		</div>
+            <a :href="'/search?q=' + encodeURIComponent(query)" 
+               @click.prevent="window.location.replace($el.href)" 
+               class="folder-btn">🖼️ 全部图片</a>
+        </div>
     </div>
 
     <div class="grid-container char-grid" @scroll.window="handleScroll()">

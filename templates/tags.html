@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}角色索引{% endblock %}
+{% block title %}搜索{% endblock %}
 
 {% block content %}
 <div x-data="tagsApp()" x-cloak>
@@ -8,8 +8,10 @@
     <div class="nav" :class="{ 'nav-hidden': !showNav }">
         <div class="nav-group left">
             <a href="/">🏠 首页</a>
-            <span style="color: #444;">|</span>
-            <div class="nav-title">角色索引</div>
+			<span style="color: #444;">|</span>
+			<div class="nav-title">搜索</div>
+			<a href="/grid">网格</a>
+            <a href="/videos">视频</a>
         </div>
         
         <div class="nav-group right">

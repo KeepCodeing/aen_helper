@@ -12,8 +12,10 @@
             <div class="nav-title">{{ character_name }} 的图集</div>
         </div>
 		<div class="nav-group right">
-			<a :href="'/tags/random/' + encodeURIComponent(charName)" class="folder-btn">🖼️ 全部图片</a>
-		</div>
+            <a :href="'/tags/random/' + encodeURIComponent(charName)" 
+               @click.prevent="window.location.replace($el.href)" 
+               class="folder-btn">🖼️ 全部图片</a>
+        </div>
     </div>
 
     <div class="grid-container char-grid" @scroll.window="handleScroll()">
