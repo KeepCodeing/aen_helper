@@ -345,14 +345,51 @@ def search_files_paged(query_str, page, page_size):
     try:
         sql_base, params = _build_search_sql(query_str)
         if not sql_base: return [], False
-        offset = (page - 1) * page_size
-        sql = f"{sql_base} ORDER BY T0.id DESC LIMIT ? OFFSET ?"
-        rows = conn.execute(sql, params + [page_size, offset]).fetchall()
-        results = [to_web_path(row['filepath']) for row in rows]
-        return results, len(results) == page_size
+        
+        # 1. 一次性查出所有符合条件的原始路径
+        rows = conn.execute(sql_base, params).fetchall()
+        abs_filepaths = [row['filepath'] for row in rows]
+        
+        if not abs_filepaths:
+            return [], False
+
+        # 2. 复用聚合函数，获取按数量排好序的文件夹列表 (保证和文件夹视图顺序完全一致)
+        ordered_folders = _aggregate_files_to_folders(abs_filepaths)
+        
+        # 3. 将图片按其所在的文件夹分组，并转换为 Web 相对路径
+        folder_to_files = {}
+        for abs_path in abs_filepaths:
+            web_path = to_web_path(abs_path)
+            if not web_path: continue
+            
+            if '/' in web_path:
+                folder_name = web_path.rsplit('/', 1)[0]
+            else:
+                folder_name = "" # 根目录
+                
+            if folder_name not in folder_to_files:
+                folder_to_files[folder_name] = []
+            folder_to_files[folder_name].append(web_path)
+        
+        # 4. 根据排好序的文件夹依次取出图片，且确保每个文件夹内的图片按 1,2,3... 自然排序
+        final_ordered_files = []
+        for folder in ordered_folders:
+            folder_name = folder['name']
+            files_in_folder = folder_to_files.get(folder_name, [])
+            files_in_folder.sort(key=natural_sort_key) # 局部自然排序
+            final_ordered_files.extend(files_in_folder)
+            
+        # 5. 在内存中进行分页切片
+        start = (page - 1) * page_size
+        end = start + page_size
+        results = final_ordered_files[start:end]
+        
+        return results, end < len(final_ordered_files)
     except Exception as e:
-        print(f"Search error: {e}"); return [], False
-    finally: conn.close()
+        print(f"Search error: {e}")
+        return [], False
+    finally: 
+        conn.close()
 
 def search_folders(query_str):
     conn = get_db_connection()
