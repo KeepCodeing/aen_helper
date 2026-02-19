@@ -1,0 +1,351 @@
+{% extends "base.html" %}
+
+{% block title %}角色索引{% endblock %}
+
+{% block content %}
+<div x-data="tagsApp()" x-cloak>
+
+    <div class="nav" :class="{ 'nav-hidden': !showNav }">
+        <div class="nav-group left">
+            <a href="/">🏠 首页</a>
+            <span style="color: #444;">|</span>
+            <div class="nav-title">角色索引</div>
+        </div>
+        
+        <div class="nav-group right">
+            <div class="filter-bar">
+                
+                <select class="filter-select" x-model="searchType" title="搜索目标">
+                    <option value="char">👤 搜角色</option>
+                    <option value="tag">🏷️ 搜标签</option>
+                </select>
+
+                <select class="filter-select" x-model="viewMode" title="结果展示方式">
+                    <option value="all">🖼️ 全部图片</option>
+                    <option value="folder">📂 文件夹归类</option>
+                </select>
+                
+                <div class="search-wrapper">
+                    <input type="text" 
+                           class="search-input" 
+                           placeholder="输入名称或标签..." 
+                           x-model="searchQuery"
+                           @input="handleInput()"
+                           @keydown.enter="performSearch()"
+                           id="searchInput">
+                    
+                    <div class="autocomplete-list" 
+                         x-show="suggestions.length > 0" 
+                         @click.outside="suggestions = []">
+                        <template x-for="item in suggestions">
+                            <div class="suggestion-item" @click="selectSuggestion(item)">
+                                <span x-text="item.name"></span>
+                                <span class="count" x-text="item.count"></span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <button class="search-btn" @click="performSearch()">
+                    🔍 搜索
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid-container char-grid" @scroll.window="handleScroll()">
+        
+        <template x-for="char in characters" :key="char.name">
+            <a :href="viewMode === 'folder' 
+                      ? '/tags/folders/' + encodeURIComponent(char.name) 
+                      : '/tags/random/' + encodeURIComponent(char.name)" 
+               class="char-card">
+               
+                <div class="char-cover">
+                    <img :src="'/media/' + char.cover" loading="lazy" :alt="char.name" @load="$el.classList.add('loaded')">
+                    <div class="char-overlay"></div>
+                </div>
+                <div class="char-info">
+                    <div class="char-name" x-text="char.name"></div>
+                    <div class="char-count" x-text="char.count + ' 张'"></div>
+                </div>
+            </a>
+        </template>
+
+        <div class="loader-trigger" x-intersect="loadMore()">
+            <span x-show="loading" class="loading-text">⏳ 正在加载...</span>
+            <span x-show="!hasMore && characters.length > 0" class="end-text">--- 到底了 ---</span>
+            <span x-show="!loading && characters.length === 0" class="empty-text">未找到匹配的角色</span>
+        </div>
+    </div>
+
+</div>
+
+<style>
+    /* --- 搜索栏布局优化 --- */
+    .filter-bar { 
+        display: flex; 
+        align-items: center; 
+        gap: 8px; 
+        margin-right: 10px; 
+        height: 36px; /* 统一高度 */
+    }
+
+    /* 下拉框美化 */
+    .filter-select { 
+        background-color: #333; 
+        color: #eee; 
+        border: 1px solid #555; 
+        padding: 0 28px 0 12px; /* 给右侧箭头留空 */
+        border-radius: 6px; 
+        font-size: 13px; 
+        cursor: pointer; 
+        height: 100%;
+        outline: none;
+        appearance: none; /* 移除浏览器默认箭头 */
+        background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+        background-repeat: no-repeat;
+        background-position: right 8px center;
+        background-size: 14px;
+        transition: border-color 0.2s, background-color 0.2s;
+    }
+    .filter-select:hover { background-color: #444; border-color: #777; }
+    .filter-select:focus { border-color: #0078d4; background-color: #222; }
+
+    /* 输入框容器 */
+    .search-wrapper { position: relative; height: 100%; }
+    
+    /* 输入框美化 */
+    .search-input { 
+        background: #222; 
+        border: 1px solid #444; 
+        color: #fff; 
+        padding: 0 12px; 
+        border-radius: 6px; 
+        width: 200px; 
+        height: 100%;
+        box-sizing: border-box; /* 确保 padding 不撑大高度 */
+        transition: width 0.3s, border-color 0.3s; 
+        font-size: 14px;
+    }
+    .search-input:focus { 
+        width: 300px; 
+        background: #1a1a1a; 
+        outline: none; 
+        border-color: #0078d4; 
+        box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.2);
+    }
+
+    /* 搜索按钮美化 */
+    .search-btn {
+        height: 100%;
+        padding: 0 16px;
+        background-color: #0078d4;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s, transform 0.1s;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .search-btn:hover { background-color: #0063b1; }
+    .search-btn:active { transform: scale(0.96); }
+
+    /* 自动补全下拉 */
+    .autocomplete-list { 
+        position: absolute; 
+        top: calc(100% + 4px); 
+        left: 0; 
+        min-width: 100%; /* 至少和输入框一样宽 */
+        max-width: 400px; /* 也可以更宽 */
+        background: #1e1e1e; 
+        border: 1px solid #444;
+        border-radius: 6px; 
+        max-height: 300px; 
+        overflow-y: auto; 
+        z-index: 2000; 
+        box-shadow: 0 8px 16px rgba(0,0,0,0.6); 
+    }
+    .suggestion-item { 
+        padding: 10px 14px; 
+        border-bottom: 1px solid #333; 
+        cursor: pointer; 
+        display: flex; 
+        justify-content: space-between; 
+        color: #ddd;
+        font-size: 13px;
+        transition: background 0.1s;
+    }
+    .suggestion-item:hover { background: #0078d4; color: #fff; }
+    .suggestion-item:hover .count { color: #eee; } /* Hover 时计数颜色变淡 */
+    .suggestion-item .count { color: #666; font-size: 0.9em; }
+
+    /* 移动端适配 */
+    @media (max-width: 768px) {
+        /* 移动端把搜索栏放到底下或者简化 */
+        .nav-group.right { display: none; } /* 暂时隐藏，或者需要单独做移动端UI */
+        /* 或者： */
+        .filter-bar { gap: 4px; }
+        .filter-select { font-size: 0; padding: 0 20px 0 8px; width: 40px; } /* 只显示图标 */
+        .search-input { width: 120px; }
+        .search-input:focus { width: 150px; }
+        .search-btn { font-size: 0; padding: 0 12px; } /* 只显示图标 */
+    }
+
+    /* --- 网格与卡片 (复用之前的样式) --- */
+    .char-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 20px;
+        padding: 60px 20px 20px 20px;
+    }
+    .char-card {
+        position: relative; display: block; aspect-ratio: 2 / 3; border-radius: 8px; overflow: hidden;
+        text-decoration: none; background: #1a1a1a; transition: transform 0.2s, box-shadow 0.2s; border: 1px solid #333;
+    }
+    .char-card:hover { transform: translateY(-5px); box-shadow: 0 5px 15px rgba(0,0,0,0.5); border-color: #666; }
+    .char-cover { width: 100%; height: 100%; position: relative; }
+    .char-cover img { width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.5s; }
+    .char-cover img.loaded { opacity: 1; }
+    .char-overlay { position: absolute; bottom: 0; left: 0; width: 100%; height: 60%; background: linear-gradient(to top, rgba(0,0,0,0.95), transparent); }
+    .char-info { position: absolute; bottom: 0; left: 0; width: 100%; padding: 12px; box-sizing: border-box; }
+    .char-name { color: #fff; font-weight: bold; font-size: 1.1em; text-shadow: 0 1px 2px rgba(0,0,0,1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
+    .char-count { color: #ccc; font-size: 0.85em; }
+    .loader-trigger { grid-column: 1 / -1; text-align: center; padding: 30px; color: #666; }
+</style>
+
+<script>
+function tagsApp() {
+    return {
+        characters: [],
+        page: 1,
+        loading: false,
+        hasMore: true,
+        showNav: true,
+        lastScrollY: 0,
+        
+        searchQuery: '',
+        searchType: 'char',
+        viewMode: 'all',
+        
+        allTags: [],
+        suggestions: [],
+
+        init() {
+            this.loadTagsCache();
+            this.loadMore();
+        },
+
+        async loadTagsCache() {
+            try {
+                const res = await fetch('/api/tags/all');
+                this.allTags = await res.json();
+            } catch(e) { console.error("Tags cache error", e); }
+        },
+
+        async loadMore() {
+            if (this.loading || !this.hasMore) return;
+            this.loading = true;
+            try {
+                // 构建查询参数
+                const params = new URLSearchParams({
+                    page: this.page,
+                    search: this.searchQuery
+                });
+                const response = await fetch(`/api/characters?${params.toString()}`);
+                const data = await response.json();
+                
+                if (data.data && data.data.length > 0) {
+                    this.characters.push(...data.data);
+                    this.page++;
+                    this.hasMore = data.has_more;
+                } else {
+                    this.hasMore = false;
+                }
+            } catch (e) {
+                console.error("Load failed", e);
+                this.hasMore = false;
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        // --- 搜索输入处理 ---
+        handleInput() {
+            const val = this.searchQuery;
+            // 提取最后一个逗号后的内容进行补全
+            const parts = val.split(',');
+            const lastPart = parts[parts.length - 1].trim().toLowerCase();
+
+            if (lastPart.length < 1) {
+                this.suggestions = [];
+                // 如果用户完全清空了输入框，可以选择是否自动重置列表
+                // 这里我们保持手动点击搜索按钮才触发重置，体验更统一
+                return;
+            }
+
+            // 过滤逻辑
+            this.suggestions = this.allTags
+                .filter(t => t.name.toLowerCase().includes(lastPart))
+                .slice(0, 15);
+        },
+
+        // --- 核心修改：点选建议 (追加模式) ---
+        selectSuggestion(item) {
+            // 1. 获取当前输入
+            let current = this.searchQuery;
+            const parts = current.split(',');
+            
+            // 2. 替换最后一部分为选中的完整标签
+            parts[parts.length - 1] = ' ' + item.name; // 加个空格美观
+            
+            // 3. 重新组合并加上逗号，方便输入下一个
+            this.searchQuery = parts.join(',') + ', ';
+            
+            // 4. 清理建议，聚焦输入框
+            this.suggestions = [];
+            document.getElementById('searchInput').focus();
+            
+            // 注意：这里不再调用 performSearch()，等待用户手动点击按钮
+        },
+
+        // --- 执行搜索 ---
+        performSearch() {
+            const query = this.searchQuery.trim().replace(/,$/, ''); // 去掉末尾可能的逗号
+            
+            // 场景 1: 搜标签 -> 跳转
+            if (this.searchType === 'tag' && query) {
+                const encodedQ = encodeURIComponent(query);
+                if (this.viewMode === 'folder') {
+                    window.location.href = '/search/folders?q=' + encodedQ;
+                } else {
+                    window.location.href = '/search?q=' + encodedQ;
+                }
+                return;
+            }
+
+            // 场景 2: 搜角色 (或空搜) -> 刷新当前网格
+            this.characters = [];
+            this.page = 1;
+            this.hasMore = true;
+            this.loading = false;
+            this.loadMore(); // 这里会读取 this.searchQuery
+        },
+
+        handleScroll() {
+            const currentScrollY = window.pageYOffset || document.documentElement.scrollTop;
+            if (currentScrollY > this.lastScrollY && currentScrollY > 50) {
+                this.showNav = false;
+            } else {
+                this.showNav = true;
+            }
+            this.lastScrollY = currentScrollY;
+        }
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+<div x-data="charFoldersApp()" x-cloak>
+
+    <div class="nav" :class="{ 'nav-hidden': !showNav }">
+        <div class="nav-group left">
+            <a href="/tags">⬅ 返回角色</a>
+            <span style="color: #444;">|</span>
+            <div class="nav-title">{{ character_name }} 的图集</div>
+        </div>
+    </div>
+
+    <div class="grid-container char-grid" @scroll.window="handleScroll()">
+        
+        <template x-for="folder in folders" :key="folder.name">
+            <a :href="'/folder/' + encodeURIComponent(folder.name)" class="char-card">
+                <div class="char-cover">
+                    <img :src="'/media/' + folder.cover" loading="lazy" @load="$el.classList.add('loaded')">
+                    <div class="char-overlay"></div>
+                </div>
+                <div class="char-info">
+                    <div class="char-name" x-text="folder.display_name"></div>
+                    <div class="char-count" x-text="folder.count + ' 张在此文件夹'"></div>
+                </div>
+            </a>
+        </template>
+
+        <div class="loader-trigger">
+            <span x-show="loading">⏳ 加载中...</span>
+            <span x-show="!loading && folders.length === 0">该角色没有归属特定文件夹</span>
+        </div>
+    </div>
+</div>
+
+<style>
+    .char-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 20px;
+        padding: 60px 20px 20px 20px;
+    }
+    @media (max-width: 768px) {
+        .char-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 60px 10px 20px 10px; }
+    }
+    .char-card {
+        position: relative; display: block; aspect-ratio: 2 / 3; border-radius: 8px; overflow: hidden;
+        text-decoration: none; background: #1a1a1a; transition: transform 0.2s; border: 1px solid #333;
+    }
+    .char-card:hover { transform: translateY(-5px); border-color: #666; }
+    .char-cover { width: 100%; height: 100%; position: relative; }
+    .char-cover img { width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.5s; }
+    .char-cover img.loaded { opacity: 1; }
+    .char-overlay { position: absolute; bottom: 0; left: 0; width: 100%; height: 60%; background: linear-gradient(to top, rgba(0,0,0,0.95), transparent); }
+    .char-info { position: absolute; bottom: 0; left: 0; width: 100%; padding: 12px; box-sizing: border-box; }
+    .char-name { color: #fff; font-weight: bold; font-size: 1.1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
+    .char-count { color: #ccc; font-size: 0.85em; }
+    .loader-trigger { grid-column: 1 / -1; text-align: center; padding: 30px; color: #666; }
+</style>
+
+<script>
+function charFoldersApp() {
+    return {
+        folders: [],
+        loading: true,
+        showNav: true,
+        lastScrollY: 0,
+        // 修复点 1：去掉引号，tojson 会自带双引号并处理内部转义
+        charName: {{ character_name | tojson }}, 
+
+        init() {
+            this.fetchFolders();
+        },
+
+        async fetchFolders() {
+            try {
+                // 确保请求的 URL 正确处理了特殊字符
+                const res = await fetch('/api/character_folders/' + encodeURIComponent(this.charName));
+                if (!res.ok) throw new Error('Network response was not ok');
+                const data = await res.json();
+                this.folders = data || [];
+            } catch (e) {
+                console.error("Fetch error:", e);
+                this.folders = [];
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        handleScroll() {
+            const currentScrollY = window.pageYOffset || document.documentElement.scrollTop;
+            this.showNav = !(currentScrollY > this.lastScrollY && currentScrollY > 50);
+            this.lastScrollY = currentScrollY;
+        }
+    }
+}
+</script>
+{% endblock %}

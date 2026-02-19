@@ -1,0 +1,450 @@
+/* ==========================================================================
+   1. 基础重置与全局样式
+   ========================================================================== */
+[x-cloak] { display: none !important; }
+
+body, html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: auto !important;
+    background-color: #000; /* 全局深色底 */
+    color: #ccc;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    /* 允许网格页纵向滚动 */
+    overflow-x: hidden;
+    overflow-y: auto !important;
+}
+
+/* 首页专用：锁定屏幕不滚动 */
+body.index-page {
+    height: 100% !important;
+    overflow: hidden !important;
+}
+
+/* ==========================================================================
+   2. 顶部导航栏 (Banner) - 适配移动端
+   ========================================================================== */
+.nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 50px;
+    background-color: #1a1a1a; /* 纯色不透明 */
+    z-index: 1000;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+	
+	transition: transform 0.3s ease-in-out;
+    will-change: transform;
+	transform: translateY(0); /* 明确初始位置 */
+}
+
+.nav-hidden {
+    transform: translateY(-100%) !important;
+}
+
+/* 左侧按钮与标题组 */
+.nav-group.left {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    flex: 1;
+    min-width: 0; /* 允许内部元素截断 */
+}
+
+/* 右侧功能组 */
+.nav-group.right {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    flex-shrink: 0; /* 移动端禁止挤压右侧 */
+}
+
+/* 导航链接/按钮基础 - 无圆角无边框 */
+.nav a {
+    color: #eee;
+    text-decoration: none;
+    padding: 0 15px;
+    font-size: 14px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    white-space: nowrap; /* 拒绝竖排文字 */
+    background-color: transparent;
+    transition: background-color 0.2s;
+}
+
+.nav a:hover {
+    background-color: #333;
+    color: #fff;
+}
+
+/* 页面标题/文件夹名 - 自动省略号 */
+.nav-title, .nav a.folder-btn.nav-title {
+    color: #fff;
+    font-weight: bold;
+    padding: 0 10px;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    
+    /* 核心修改：将其宽度限制在导航栏总宽度的 20% */
+    max-width: 20vw; 
+    display: inline-block; /* 确保宽度限制生效 */
+    line-height: 50px; /* 与导航栏高度对齐 */
+}
+
+/* 移动端专项微调 */
+@media (max-width: 600px) {
+    .nav-title, .nav a.folder-btn.nav-title {
+        max-width: 20vw; /* 依然保持 20% 宽度 */
+        font-size: 12px;
+        padding: 0 5px;
+    }
+    
+    /* 确保右侧组不会因为标题太小而塌陷 */
+    .nav-group.right {
+        flex-shrink: 0;
+        justify-content: flex-end;
+    }
+}
+
+/* 右侧蓝色强调按钮 */
+.nav a.folder-btn {
+    background-color: #005a9e;
+    color: #fff;
+    font-weight: bold;
+}
+.nav a.folder-btn:hover {
+    background-color: #0078d4;
+}
+
+/* 移动端 Banner 特殊处理 */
+@media (max-width: 600px) {
+    .nav-group.left {
+        overflow-x: auto; /* 支持横向滑动 */
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    .nav-group.left::-webkit-scrollbar { display: none; }
+
+    .nav-title { max-width: 120px; font-size: 13px; }
+    .nav a { padding: 0 10px; font-size: 13px; }
+    
+    .nav-group.right {
+        border-left: 1px solid #333;
+        box-shadow: -5px 0 10px rgba(0,0,0,0.5);
+    }
+}
+
+/* ==========================================================================
+   3. 首页 (Random) 图片展示与蒙版
+   ========================================================================== */
+#index-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    padding-top: 50px;
+    box-sizing: border-box;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #000;
+}
+
+#index-container img {
+    display: block;
+    width: auto;
+    height: auto;
+    max-height: calc(100vh - 50px);
+    max-width: 100%;
+    object-fit: contain;
+    z-index: 10;
+}
+
+/* 加载蒙版 */
+.loading-overlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background-color: rgba(0, 0, 0, 0.9);
+    backdrop-filter: blur(8px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #fff;
+    font-size: 1.2rem;
+    z-index: 500;
+}
+
+/* ==========================================================================
+   4. 网格系统 (Grid / Videos / Folder)
+   ========================================================================== */
+.grid-container {
+    display: grid;
+    
+    /* 建议：单列布局时，稍微增加一点间距会让视觉更舒适 */
+    gap: 5px; 
+    
+    /* padding: 上 左右 下 */
+    padding: 54px 15px 20px 15px; 
+    
+    /* --- 核心修改：从 repeat(2, 1fr) 改为 1fr --- */
+    grid-template-columns: 1fr; 
+    /* ---------------------------------------- */
+}
+
+/* PC 端保持不变 (依然是 5 列) */
+@media (min-width: 768px) {
+    .grid-container {
+        grid-template-columns: repeat(5, 1fr); /* PC端 5 列 */
+        gap: 5px; /* PC端间距恢复小一点 */
+        padding: 54px 10px 20px 10px;
+    }
+}
+
+@media (min-width: 768px) {
+    .grid-container {
+        grid-template-columns: repeat(5, 1fr); /* PC端 5 列 */
+    }
+}
+
+.grid-item {
+    position: relative;
+    background-color: #111;
+    aspect-ratio: 3 / 4; /* 竖向美感 */
+    overflow: hidden;
+    cursor: pointer;
+}
+
+.grid-item img, .grid-item video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.grid-item img.loaded, .grid-item video.loaded {
+    opacity: 1;
+}
+
+/* 悬停显示的文件夹按钮 */
+.grid-folder-btn {
+    position: absolute;
+    bottom: 0; left: 0; width: 100%;
+    padding: 8px 0;
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    text-align: center;
+    font-size: 12px;
+    text-decoration: none;
+    transform: translateY(100%);
+    transition: transform 0.2s ease;
+    z-index: 20;
+}
+
+@media (hover: hover) {
+    .grid-item:hover .grid-folder-btn { transform: translateY(0); }
+}
+
+.loader-trigger {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 40px;
+    color: #555;
+}
+
+/* ==========================================================================
+   5. 大图灯箱 (Modal) - 沉浸式优化
+   ========================================================================== */
+.modal {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.98);
+    z-index: 2000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* 媒体内容包装盒 - 尺寸同步媒体 */
+.modal-media-container {
+    position: relative;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    max-width: 100%;
+    max-height: 100%;
+    z-index: 2005;
+}
+
+.modal-content {
+    display: block;
+    width: auto;
+    height: auto;
+    max-height: 100vh;
+    max-width: 100vw;
+    object-fit: contain;
+}
+
+/* 隐形导航区域 - 限制在媒体高度内 */
+.nav-hitbox {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    width: 15%; /* 点击响应范围 */
+    z-index: 2010;
+    cursor: pointer;
+}
+.prev-hitbox { left: 0; }
+.next-hitbox { right: 0; }
+
+.modal-close {
+    position: absolute;
+    top: 10px; right: 20px;
+    color: #fff; font-size: 45px;
+    cursor: pointer;
+    z-index: 2100; /* 最高层级 */
+    opacity: 0.5;
+    transition: opacity 0.2s;
+    line-height: 1;
+}
+.modal-close:hover { opacity: 1; }
+
+/* 辅助动画类 */
+.opacity-0 { opacity: 0; }
+.opacity-100 { opacity: 1; }
+.transition-opacity { transition: opacity 0.3s ease-in-out; }
+
+/* --- 底部动作面板 (Action Sheet) --- */
+.action-sheet-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 3000; /* 必须比导航栏和网格高 */
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end; /* 底部对齐 */
+}
+
+.action-sheet {
+    background: #1e1e1e;
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+    padding: 20px;
+    padding-bottom: env(safe-area-inset-bottom, 20px); /* 适配 iPhone 底部横条 */
+    width: 100%;
+    box-sizing: border-box;
+    box-shadow: 0 -5px 20px rgba(0,0,0,0.5);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.sheet-header {
+    color: #888;
+    font-size: 13px;
+    text-align: center;
+    margin-bottom: 10px;
+    word-break: break-all;
+    padding: 0 10px;
+}
+
+.sheet-btn {
+    display: block;
+    width: 100%;
+    padding: 14px;
+    
+    /* --- 核心修复：防止 padding 撑大宽度 --- */
+    box-sizing: border-box; 
+    /* ----------------------------------- */
+    
+    border-radius: 12px;
+    border: none;
+    font-size: 16px;
+    font-weight: 600;
+    text-align: center;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.2s;
+    
+    /* 确保移除默认的外边距干扰 */
+    margin: 0; 
+}
+
+.sheet-btn.primary {
+    background-color: #0078d4;
+    color: #fff;
+}
+.sheet-btn.primary:active { background-color: #005a9e; }
+
+.sheet-btn.cancel {
+    background-color: #333;
+    color: #fff;
+    margin-top: 5px; /* 增加一点间距，原来是 5px 可能太挤 */
+	
+	/* --- 新增：强制底部留白 --- */
+    margin-bottom: 30px;
+}
+
+.sheet-btn.cancel:active { background-color: #444; }
+
+/* 辅助动画类 (如果 tailwind/alpine 未生效) */
+.translate-y-full { transform: translateY(100%); }
+.translate-y-0 { transform: translateY(0); }
+.transition-transform { transition-property: transform; }
+.duration-300 { transition-duration: 300ms; }
+.ease-out { transition-timing-function: ease-out; }
+
+/* ==========================================================================
+   6. 移动端专用跳转按钮 (PE Optimization)
+   ========================================================================== */
+
+/* 默认隐藏 (PC端不显示这个圆角按钮，继续使用 Hover 条) */
+.mobile-jump-btn {
+    display: none;
+}
+
+/* 仅在移动端 (屏幕宽度小于 768px) 显示 */
+@media (max-width: 768px) {
+    /* 隐藏 PC 端的 Hover 条，防止点击时闪现 */
+    .grid-folder-btn {
+        display: none !important;
+    }
+
+    /* 显示移动端圆角按钮 */
+    .mobile-jump-btn {
+        display: flex; /* 启用 flex 布局以居中图标 */
+        position: absolute;
+        bottom: 8px;
+        right: 8px;
+        width: 36px;
+        height: 36px;
+        background-color: rgba(0, 0, 0, 0.6); /* 半透明黑底 */
+        backdrop-filter: blur(2px);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%; /* 圆形 */
+        color: #fff;
+        text-decoration: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 20;
+        font-size: 16px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+        transition: transform 0.2s, background-color 0.2s;
+    }
+
+    .mobile-jump-btn:active {
+        background-color: rgba(0, 120, 212, 0.8); /* 点击变蓝 */
+        transform: scale(0.9);
+    }
+}

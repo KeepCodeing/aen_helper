@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}随机浏览{% endblock %}
+{% block body_class %}index-page{% endblock %}
+
+{% block content %}
+<div x-data="randomImageApp()" 
+     @scroll.window="handleScroll()"
+     style="height: 100%; width: 100%;">
+
+    <div class="nav" :class="{ 'nav-hidden': !showNav }">
+        <div class="nav-group left">
+            <a href="/search">🔍 搜索</a>
+            <a href="/grid">🧱 网格</a>
+            <a href="/videos">🎬 视频</a>
+            <a href="/tags">🏷️ 角色</a>
+            <a href="/rescan">🔄 扫描</a>
+        </div>
+        <div class="nav-group right">
+            <template x-if="folderPath">
+                <a :href="'/folder/' + encodeURIComponent(folderPath)" 
+                   class="folder-btn nav-title" 
+                   x-text="'📂 ' + folderPath.split('/').pop()">
+                </a>
+            </template>
+        </div>
+    </div>
+
+    <div id="index-container" 
+		@click="fetchImage()"
+		@touchstart="handleTouchStart($event)"
+		@touchmove="handleTouchMove($event)"
+		title="点击切换下一张">
+        
+        <div x-show="loading" 
+             class="loading-overlay"
+             x-transition.opacity.duration.300ms
+             x-cloak>
+             <span>⏳ 加载中...</span>
+        </div>
+
+        <template x-if="imageUrl">
+            <img :src="imageUrl" 
+                 alt="随机图片" 
+                 @load="loading = false"
+                 :class="loading ? 'opacity-0' : 'opacity-100'"
+                 class="transition-opacity">
+        </template>
+    </div>
+</div>
+
+<script>
+function randomImageApp() {
+    // 同步恢复历史状态，防止返回时闪烁
+    let restoredState = null;
+    const navEntries = performance.getEntriesByType("navigation");
+    const navType = navEntries.length > 0 ? navEntries[0].type : '';
+    if (navType === 'back_forward' && history.state && history.state.imageUrl) {
+        restoredState = history.state;
+    }
+
+    return {
+        imageUrl: restoredState ? restoredState.imageUrl : '',
+        folderPath: restoredState ? restoredState.folderPath : '',
+        loading: !restoredState,
+        isFetching: false,
+        // 导航栏控制
+        showNav: true,
+        lastScrollY: 0,
+
+        init() {
+            if (!this.imageUrl) this.fetchImage();
+        },
+
+        handleScroll() {
+            // 首页通常不滚动，但保留逻辑以备页面内容扩充
+            const currentScrollY = window.scrollY;
+            this.showNav = currentScrollY <= this.lastScrollY || currentScrollY < 50;
+            this.lastScrollY = currentScrollY;
+        },
+		
+		// --- 新增：触摸相关状态 ---
+        touchStartY: 0,
+        
+        init() {
+            if (!this.imageUrl) this.fetchImage();
+        },
+
+        // --- 保留：PC端如果窗口变小出现滚动条时的兼容 ---
+        handleScroll() {
+            const currentScrollY = window.scrollY;
+            if (currentScrollY <= 0) return; // 忽略顶部反弹
+            this.showNav = currentScrollY <= this.lastScrollY || currentScrollY < 50;
+            this.lastScrollY = currentScrollY;
+        },
+
+        // --- 新增：触摸开始 ---
+        handleTouchStart(e) {
+            // 记录手指接触屏幕时的 Y 坐标
+            this.touchStartY = e.touches[0].clientY;
+        },
+
+        // --- 新增：触摸移动 (模拟滚动) ---
+        handleTouchMove(e) {
+            const currentY = e.touches[0].clientY;
+            const diff = currentY - this.touchStartY;
+            const threshold = 20; // 灵敏度阈值，防止轻微抖动误触
+
+            // 逻辑：
+            // diff > 0: 手指向下拖动 (页面内容逻辑上下降) -> 类似于"向上滚动" -> 显示导航
+            // diff < 0: 手指向上拖动 (页面内容逻辑上上升) -> 类似于"向下浏览" -> 隐藏导航
+            
+            if (diff > threshold) {
+                this.showNav = true;
+            } else if (diff < -threshold) {
+                this.showNav = false;
+            }
+            
+            // 注意：这里不更新 touchStartY，实现"一滑到底"的效果
+            // 如果想要更灵敏的连续滑动，可以在这里加上 this.touchStartY = currentY;
+        },
+
+        async fetchImage() {
+            if (this.isFetching) return;
+            this.isFetching = true;
+            this.loading = true;
+
+            try {
+                const response = await fetch('/api/random-image');
+                const data = await response.json();
+                
+                const img = new Image();
+                img.onload = () => {
+                    this.imageUrl = '/media/' + data.path;
+                    this.folderPath = data.folder;
+                    // 注意：loading 的关闭交给了 img 标签的 @load 事件
+                    history.replaceState({
+                        imageUrl: this.imageUrl,
+                        folderPath: this.folderPath
+                    }, '', location.href);
+                };
+                img.src = '/media/' + data.path;
+            } catch (e) {
+                console.error(e);
+                this.loading = false;
+            } finally {
+                this.isFetching = false;
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

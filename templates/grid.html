@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+<div data-api-url="{{ api_url }}" 
+     x-data="galleryApp($el.dataset.apiUrl)" 
+     @scroll.window="handleScroll()"
+     x-cloak>
+
+    <div class="nav" :class="{ 'nav-hidden': !showNav }">
+        <div class="nav-group left">
+            <a href="/">🏠 首页</a>
+            <span style="color: #444;">|</span>
+            <div class="nav-title" title="{{ page_title }}">{{ page_title }}</div>
+            
+            <a href="/grid" x-show="!baseApiUrl.includes('/api/images')">图片</a>
+            <a href="/videos" x-show="!baseApiUrl.includes('/api/videos')">视频</a>
+            <a href="/tags">角色</a>
+        </div>
+        <div class="nav-group right">
+            <a href="/search" class="folder-btn">🔍 搜索</a>
+        </div>
+    </div>
+
+    <div class="grid-container">
+        <template x-for="(file, index) in items" :key="index">
+            <div class="grid-item" @click="openModal(index)">
+                <template x-if="isImage(file)">
+                    <img :src="'/media/' + file" loading="lazy" @load="$el.classList.add('loaded')">
+                </template>
+                <template x-if="isVideo(file)">
+                    <video :src="'/media/' + file" muted loop playsinline
+                           onmouseover="this.play()" onmouseout="this.pause()"
+                           onloadeddata="this.classList.add('loaded')"></video>
+                </template>
+
+                <a :href="getFolderLink(file)"
+                   class="grid-folder-btn"
+                   x-show="!isFolderView && hasFolder(file)"
+                   @click.stop>
+                    📂 打开图集
+                </a>
+
+                <a :href="getFolderLink(file)"
+                   class="mobile-jump-btn"
+                   x-show="!isFolderView && hasFolder(file)"
+                   @click.stop> 📂
+                </a>
+            </div>
+        </template>
+
+        <div class="loader-trigger" x-intersect="typeof loadMore === 'function' && loadMore()">
+            <span x-show="loading">⏳ 加载中...</span>
+            <span x-show="!hasMore && items.length > 0">--- End ---</span>
+        </div>
+    </div>
+
+    <div class="modal" 
+         x-show="modalOpen" 
+         x-transition.opacity
+         @keydown.escape.window="closeModal()"
+         @keydown.arrow-right.window="next()"
+         @keydown.arrow-left.window="prev()"
+         @click="closeModal()">
+         
+        <div class="modal-close" @click.stop="closeModal()">&times;</div>
+        
+        <div style="width: 100%; height: 100%; display: flex; justify-content: center; align-items: center;">
+            <template x-if="modalOpen && currentItem">
+                <div class="modal-media-container" @click.stop>
+                    <div class="nav-hitbox prev-hitbox" @click.stop="prev()"></div>
+                    <div class="nav-hitbox next-hitbox" @click.stop="next()"></div>
+
+                    <template x-if="isImage(currentItem)">
+                        <img :src="'/media/' + currentItem" class="modal-content">
+                    </template>
+                    <template x-if="isVideo(currentItem)">
+                        <video :src="'/media/' + currentItem" class="modal-content" controls autoplay></video>
+                    </template>
+                </div>
+            </template>
+        </div>
+    </div>
+</div>
+
+<script>
+function galleryApp(apiUrl) {
+    // 预处理：确保传入的 URL 字符串不带多余的引号（防御性编程）
+    const cleanApiUrl = typeof apiUrl === 'string' ? apiUrl.replace(/^["']|["']$/g, '') : '';
+
+    return {
+        items: [],
+        page: 1,
+        loading: false,
+        hasMore: true,
+        modalOpen: false,
+        currentIndex: 0,
+        baseApiUrl: cleanApiUrl,
+        isFolderView: cleanApiUrl.includes('folder_data'),
+        seed: (cleanApiUrl.includes('/api/images') || cleanApiUrl.includes('/api/videos')) ? Date.now() : null,
+        
+        showNav: true,
+        lastScrollY: 0,
+
+        handleScroll() {
+            if (this.modalOpen) return;
+            const currentScrollY = window.pageYOffset || document.documentElement.scrollTop;
+            this.showNav = !(currentScrollY > this.lastScrollY && currentScrollY > 50);
+            this.lastScrollY = currentScrollY;
+        },
+
+        async loadMore() {
+            if (this.loading || !this.hasMore) return;
+            this.loading = true;
+            try {
+                const sep = this.baseApiUrl.includes('?') ? '&' : '?';
+                let url = `${this.baseApiUrl}${sep}page=${this.page}`;
+                if (this.seed) url += `&seed=${this.seed}`;
+                
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('Network response was not ok');
+                const data = await res.json();
+                
+                if (data.files && data.files.length > 0) {
+                    this.items.push(...data.files);
+                    this.page++;
+                    this.hasMore = data.has_more;
+                } else {
+                    this.hasMore = false;
+                }
+            } catch (e) {
+                console.error("Gallery Load Error:", e);
+                this.hasMore = false;
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        openModal(idx) {
+            this.currentIndex = idx;
+            this.modalOpen = true;
+            this.showNav = false;
+            document.body.style.overflow = 'hidden';
+        },
+        closeModal() {
+            this.modalOpen = false;
+            this.showNav = true;
+            document.body.style.overflow = '';
+        },
+        get currentItem() { return this.items[this.currentIndex]; },
+        
+        next() {
+            if (this.currentIndex < this.items.length - 1) {
+                this.currentIndex++;
+            } else if (this.hasMore) {
+                this.loadMore().then(() => {
+                    if (this.currentIndex < this.items.length - 1) this.currentIndex++;
+                });
+            }
+        },
+        prev() { 
+            if (this.currentIndex > 0) this.currentIndex--; 
+        },
+        isImage(p) { return p ? /\.(png|jpg|jpeg|webp|bmp)$/i.test(p) : false; },
+        isVideo(p) { return p ? /\.(mp4|webm|mov|mkv|gif)$/i.test(p) : false; },
+        hasFolder(p) { return p && (p.includes('/') || p.includes('\\')); },
+        getFolderLink(p) {
+            if (!p) return '#';
+            const norm = p.replace(/\\/g, '/');
+            const lastSlash = norm.lastIndexOf('/');
+            return lastSlash !== -1 ? '/folder/' + encodeURIComponent(norm.substring(0, lastSlash)) : '#';
+        }
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,108 @@
+# =========================
+# 1. 运行缓存与编译文件
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# =========================
+# 2. 虚拟环境 (uv, venv 等)
+# =========================
+# uv 默认生成的虚拟环境目录是 .venv
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# =========================
+# 3. 环境变量与机密配置
+# =========================
+.env
+.env.local
+.env.*.local
+*.pem
+
+# =========================
+# 4. 构建与打包产物
+# =========================
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# =========================
+# 5. 测试与覆盖率报告
+# =========================
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.pycover
+.hypothesis/
+.pytest_cache/
+pytestdebug.log
+
+# =========================
+# 6. 类型检查与代码检查工具
+# =========================
+.mypy_cache/
+.pyre/
+.pytype/
+.ruff_cache/
+
+# =========================
+# 7. IDE 与编辑器配置文件
+# =========================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# =========================
+# 8. 操作系统生成文件
+# =========================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# =========================
+# 9. [重要] V2 项目特定排除
+# =========================
+# 排除本地 SQLite 数据库文件，防止覆盖线上或他人的数据
+*.db
+*.sqlite3
+
+# 排除本地扫描生成的媒体文件缓存和缩略图
+cache.json
+media/
+data/
+uploads/
+media_cache.json

@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}搜索结果 - {{ search_query }}{% endblock %}
+
+{% block content %}
+<div x-data="searchFoldersApp()" x-cloak>
+
+    <div class="nav" :class="{ 'nav-hidden': !showNav }">
+        <div class="nav-group left">
+            <a href="/tags">⬅ 标签索引</a>
+            <span style="color: #444;">|</span>
+            <div class="nav-title">搜索结果 (文件夹): {{ search_query }}</div>
+        </div>
+    </div>
+
+    <div class="grid-container char-grid" @scroll.window="handleScroll()">
+        
+        <template x-for="folder in folders" :key="folder.name">
+            <a :href="'/folder/' + encodeURIComponent(folder.name)" class="char-card">
+                <div class="char-cover">
+                    <img :src="'/media/' + folder.cover" loading="lazy" @load="$el.classList.add('loaded')">
+                    <div class="char-overlay"></div>
+                </div>
+                <div class="char-info">
+                    <div class="char-name" x-text="folder.display_name"></div>
+                    <div class="char-count" x-text="folder.count + ' 个匹配项'"></div>
+                </div>
+            </a>
+        </template>
+
+        <div class="loader-trigger">
+            <span x-show="loading">⏳ 正在聚合搜索结果...</span>
+            <span x-show="!loading && folders.length === 0">未找到包含此标签的文件夹</span>
+        </div>
+    </div>
+</div>
+
+<style>
+    .char-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 20px; padding: 60px 20px 20px 20px; }
+    @media (max-width: 768px) { .char-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 60px 10px 20px 10px; } }
+    .char-card { position: relative; display: block; aspect-ratio: 2 / 3; border-radius: 8px; overflow: hidden; text-decoration: none; background: #1a1a1a; border: 1px solid #333; transition: transform 0.2s; }
+    .char-card:hover { transform: translateY(-5px); border-color: #666; }
+    .char-cover { width: 100%; height: 100%; }
+    .char-cover img { width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.5s; }
+    .char-cover img.loaded { opacity: 1; }
+    .char-overlay { position: absolute; bottom: 0; left: 0; width: 100%; height: 60%; background: linear-gradient(to top, rgba(0,0,0,0.95), transparent); }
+    .char-info { position: absolute; bottom: 0; left: 0; width: 100%; padding: 12px; box-sizing: border-box; }
+    .char-name { color: #fff; font-weight: bold; font-size: 1.1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
+    .char-count { color: #ccc; font-size: 0.85em; }
+    .loader-trigger { grid-column: 1 / -1; text-align: center; padding: 30px; color: #666; }
+</style>
+
+<script>
+function searchFoldersApp() {
+    return {
+        folders: [],
+        loading: true,
+        showNav: true,
+        lastScrollY: 0,
+        // 修复点 2：移除外层单引号。tojson 会自动生成双引号包裹的 JS 字符串并转义内部字符
+        query: {{ search_query | tojson }},
+
+        init() {
+            this.fetchData();
+        },
+
+        async fetchData() {
+            if (!this.query) {
+                this.loading = false;
+                return;
+            }
+            try {
+                // 修复点 3：确保 query 传入前已经被清洗（防止残留的双引号）
+                const cleanQuery = this.query.replace(/^["']|["']$/g, '');
+                const res = await fetch('/api/search/folders?q=' + encodeURIComponent(cleanQuery));
+                if (!res.ok) throw new Error('Search failed');
+                this.folders = await res.json();
+            } catch (e) {
+                console.error("Fetch data error:", e);
+                this.folders = [];
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        handleScroll() {
+            const currentScrollY = window.pageYOffset || document.documentElement.scrollTop;
+            this.showNav = !(currentScrollY > this.lastScrollY && currentScrollY > 50);
+            this.lastScrollY = currentScrollY;
+        }
+    }
+}
+</script>
+{% endblock %}
