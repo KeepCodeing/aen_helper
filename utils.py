@@ -356,17 +356,14 @@ def search_files_paged(query_str, page, page_size, folder_filter=None):
         sql_base, params = _build_search_sql(query_str)
         if not sql_base: return [], False
         
-        # 1. 一次性查出所有符合条件的原始路径
         rows = conn.execute(sql_base, params).fetchall()
         abs_filepaths = [row['filepath'] for row in rows]
         
         if not abs_filepaths:
             return [], False
 
-        # 2. 复用聚合函数，获取按数量排好序的文件夹列表
         ordered_folders = _aggregate_files_to_folders(abs_filepaths)
         
-        # 3. 将图片按其所在的文件夹分组，并转换为 Web 相对路径
         folder_to_files = {}
         for abs_path in abs_filepaths:
             web_path = to_web_path(abs_path)
@@ -375,11 +372,15 @@ def search_files_paged(query_str, page, page_size, folder_filter=None):
             if '/' in web_path:
                 folder_name = web_path.rsplit('/', 1)[0]
             else:
-                folder_name = "" # 根目录
+                folder_name = "" 
                 
-            # --- [核心新增] 如果传入了 folder_filter，则丢弃不属于该文件夹的图片 ---
-            if folder_filter is not None and folder_name != folder_filter:
-                continue
+            # --- 【核心修改】：支持递归子目录过滤 ---
+            if folder_filter is not None:
+                # 检查 folder_name 是否等于 folder_filter，或者是 folder_filter 的子路径
+                is_match = (folder_name == folder_filter) or folder_name.startswith(folder_filter + "/")
+                if not is_match:
+                    continue
+            # ----------------------------------------
                 
             if folder_name not in folder_to_files:
                 folder_to_files[folder_name] = []
