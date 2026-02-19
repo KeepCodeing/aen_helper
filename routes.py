@@ -72,11 +72,18 @@ def folder_view_page(folder_path=""):
 def search_page():
     """搜索结果页 (图片流模式)"""
     query = request.args.get('q', '')
-    folder = request.args.get('folder', None) # [新增] 接收文件夹参数
+    folder = request.args.get('folder', None) # 接收文件夹参数
+    
+    # --- 【新增优化】：检测该文件夹是否已是最底层（没有子文件夹） ---
+    has_subfolders = True
+    if folder is not None:
+        sub_folders, _ = get_directory_tree(folder)
+        if not sub_folders:
+            has_subfolders = False
+    # -----------------------------------------------------------
     
     if query:
         api_url = f"/api/search?q={urllib.parse.quote(query)}"
-        # [新增] 如果存在文件夹限制，拼接到 API URL 并修改页面标题
         if folder is not None:
             api_url += f"&folder={urllib.parse.quote(folder)}"
             display_folder = folder if folder else "根目录"
@@ -87,7 +94,8 @@ def search_page():
         api_url = "" 
         title = "搜索"
         
-    return render_template('grid.html', page_title=title, api_url=api_url, is_search=True, search_query=query)
+    # 【修改】：将 has_subfolders 变量传给前端模板
+    return render_template('grid.html', page_title=title, api_url=api_url, is_search=True, search_query=query, has_subfolders=has_subfolders)
 
 @main_bp.route('/search/folders')
 def search_folders_page():
