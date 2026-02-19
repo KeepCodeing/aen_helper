@@ -1,0 +1,300 @@
+{% extends "base.html" %}
+
+{% block title %}设置与相册管理{% endblock %}
+
+{% block content %}
+<div x-data="settingsApp()" x-init="initApp()" x-cloak class="settings-container">
+
+    <div class="nav">
+        <div class="nav-group left">
+            <div class="nav-title">⚙️ 系统设置与相册大厅</div>
+        </div>
+    </div>
+
+    <div class="settings-layout">
+        
+        <div class="panel albums-panel">
+            <h2 class="panel-title">📂 我的便携相册</h2>
+            <p class="panel-desc">选择一个已完成打标的相册并挂载浏览</p>
+
+            <div class="album-grid">
+                <template x-if="albums.length === 0">
+                    <div class="empty-state">
+                        暂无相册，请在右侧输入目录进行 AI 打标
+                    </div>
+                </template>
+
+                <template x-for="album in albums" :key="album">
+                    <div class="album-card">
+                        <div class="album-icon">🗂️</div>
+                        <div class="album-info">
+                            <div class="album-path" x-text="album" :title="album"></div>
+                        </div>
+                        <div class="album-actions">
+                            <button class="mount-btn" @click="mountAlbum(album)" :disabled="mounting === album">
+                                <span x-show="mounting !== album">进入图库 ➔</span>
+                                <span x-show="mounting === album">加载中...</span>
+                            </button>
+                            <button class="delete-btn" @click="removeAlbum(album)" title="从列表中移除">🗑️</button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <div class="panel tagger-panel">
+            <h2 class="panel-title">✨ 新增相册 (AI 智能打标)</h2>
+            <p class="panel-desc">输入本地文件夹的绝对路径，开始后台扫描与识别</p>
+
+            <div class="input-group">
+                <input type="text" 
+                       x-model="newAlbumPath" 
+                       class="path-input" 
+                       placeholder="例如: E:\rise and shine\2D\XP\Splus\AI"
+                       :disabled="status.is_running">
+                
+                <button class="start-btn" 
+                        @click="startTagger()" 
+                        :disabled="status.is_running || !newAlbumPath.trim()">
+                    <span x-show="!status.is_running">🚀 开始打标</span>
+                    <span x-show="status.is_running">⏸️ 任务运行中</span>
+                </button>
+            </div>
+
+            <div class="terminal-box">
+                <div class="terminal-header">
+                    <span class="dot red"></span>
+                    <span class="dot yellow"></span>
+                    <span class="dot green"></span>
+                    <span class="terminal-title">Tagger Console</span>
+                </div>
+                <div class="terminal-body" :class="{ 'active': status.is_running }">
+                    <template x-if="!status.is_running && !status.output">
+                        <div class="terminal-line" style="color: #666;">Waiting for task...</div>
+                    </template>
+                    
+                    <template x-if="status.target_dir">
+                        <div class="terminal-line info">
+                            > Target: <span x-text="status.target_dir"></span>
+                        </div>
+                    </template>
+
+                    <div class="terminal-line output" x-text="status.output || '...'"></div>
+                    
+                    <template x-if="status.is_running">
+                        <div class="spinner-line">
+                            <span class="spinner"></span> Processing...
+                        </div>
+                    </template>
+                </div>
+            </div>
+            
+            <div class="hint-text">
+                💡 提示：打标过程可能需要数分钟至数小时。关闭此网页不会中断后台任务，您可以随时刷新查看进度。
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<style>
+    /* 页面基础布局 */
+    .settings-container { padding-top: 60px; min-height: 100vh; background: #121212; color: #eee; }
+    .settings-layout { display: flex; gap: 30px; padding: 30px; max-width: 1400px; margin: 0 auto; flex-wrap: wrap; }
+    
+    /* 面板通用样式 */
+    .panel { background: #1a1a1a; border: 1px solid #333; border-radius: 12px; padding: 25px; flex: 1; min-width: 350px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+    .panel-title { margin: 0 0 8px 0; font-size: 1.4em; color: #fff; display: flex; align-items: center; gap: 8px; }
+    .panel-desc { color: #888; font-size: 0.9em; margin-bottom: 25px; }
+
+    /* 左侧相册列表 */
+    .album-grid { display: flex; flex-direction: column; gap: 15px; }
+    .album-card { display: flex; align-items: center; background: #222; border: 1px solid #444; border-radius: 8px; padding: 15px; transition: transform 0.2s, border-color 0.2s; }
+    .album-card:hover { border-color: #0078d4; transform: translateX(5px); }
+    .album-icon { font-size: 24px; margin-right: 15px; }
+    .album-info { flex: 1; overflow: hidden; }
+    .album-path { font-family: monospace; font-size: 1.1em; color: #ddd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
+    .empty-state { text-align: center; padding: 40px 20px; color: #666; background: #1a1a1a; border: 2px dashed #333; border-radius: 8px; }
+
+    /* 按钮 */
+    .mount-btn { background: #0078d4; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: background 0.2s; white-space: nowrap; margin-left: 15px; }
+    .mount-btn:hover:not(:disabled) { background: #0063b1; }
+    .mount-btn:disabled { background: #444; color: #888; cursor: not-allowed; }
+
+    /* 右侧输入与终端 */
+    .input-group { display: flex; gap: 10px; margin-bottom: 20px; }
+    .path-input { flex: 1; background: #222; border: 1px solid #444; color: #fff; padding: 12px 15px; border-radius: 6px; font-size: 1em; font-family: monospace; transition: border-color 0.2s; }
+    .path-input:focus { border-color: #0078d4; outline: none; }
+    .path-input:disabled { opacity: 0.6; cursor: not-allowed; }
+    .start-btn { background: #107c10; color: #fff; border: none; padding: 0 24px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background 0.2s; white-space: nowrap; }
+    .start-btn:hover:not(:disabled) { background: #0b5a0b; }
+    .start-btn:disabled { background: #444; color: #888; cursor: not-allowed; }
+
+    /* 酷炫的终端输出框 */
+    .terminal-box { background: #0c0c0c; border-radius: 8px; border: 1px solid #333; overflow: hidden; margin-bottom: 15px; }
+    .terminal-header { background: #1e1e1e; padding: 8px 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #333; }
+    .dot { width: 12px; height: 12px; border-radius: 50%; }
+    .dot.red { background: #ff5f56; }
+    .dot.yellow { background: #ffbd2e; }
+    .dot.green { background: #27c93f; }
+    .terminal-title { color: #888; font-size: 0.8em; margin-left: auto; font-family: monospace; }
+    
+    .terminal-body { padding: 15px; font-family: 'Consolas', 'Courier New', monospace; font-size: 0.9em; min-height: 120px; color: #ccc; line-height: 1.5; }
+    .terminal-body.active { box-shadow: inset 0 0 20px rgba(0, 255, 0, 0.05); }
+    .terminal-line.info { color: #0078d4; margin-bottom: 10px; }
+    .terminal-line.output { color: #27c93f; word-wrap: break-word; }
+    
+    .spinner-line { display: flex; align-items: center; gap: 10px; margin-top: 15px; color: #888; font-size: 0.85em; }
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #444; border-top-color: #27c93f; border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .hint-text { color: #888; font-size: 0.85em; line-height: 1.4; }
+
+    /* 移动端适配 */
+    @media (max-width: 768px) {
+        .settings-layout { padding: 15px; flex-direction: column; }
+        .input-group { flex-direction: column; }
+        .start-btn { padding: 12px; }
+        .album-card { flex-direction: column; align-items: stretch; text-align: center; gap: 10px; }
+        .mount-btn { margin-left: 0; }
+        .album-path { direction: ltr; }
+    }
+	
+	.album-actions { display: flex; align-items: center; gap: 10px; margin-left: 15px; }
+    .delete-btn { background: #444; color: #fff; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; transition: background 0.2s; }
+    .delete-btn:hover { background: #d13438; }
+</style>
+
+<script>
+function settingsApp() {
+    return {
+        albums: [],
+        newAlbumPath: '',
+        mounting: null,
+        status: {
+            is_running: false,
+            target_dir: '',
+            output: ''
+        },
+        pollInterval: null,
+
+        initApp() {
+            this.fetchAlbums();
+            this.fetchStatus();
+            
+            // 只有当任务正在运行，或者我们处于未知状态时，才高频轮询
+            this.pollInterval = setInterval(() => {
+                if (this.status.is_running || this.status.output === '') {
+                    this.fetchStatus();
+                }
+            }, 1000); // 1秒刷新一次进度
+        },
+
+        async fetchAlbums() {
+            try {
+                const res = await fetch('/api/albums');
+                const data = await res.json();
+                this.albums = data.albums || [];
+            } catch (e) {
+                console.error("Failed to load albums", e);
+            }
+        },
+
+        async fetchStatus() {
+            try {
+                const res = await fetch('/api/tagger/status');
+                const newStatus = await res.json();
+                
+                // 如果检测到任务刚刚从"运行中"变成"已停止"，说明打标完成了，刷新相册列表
+                if (this.status.is_running && !newStatus.is_running) {
+                    this.fetchAlbums();
+                }
+                this.status = newStatus;
+                
+                // 如果任务正在运行，把输入框清空并绑定到正在运行的目录上
+                if (this.status.is_running) {
+                    this.newAlbumPath = '';
+                }
+            } catch (e) {
+                console.error("Failed to fetch status", e);
+            }
+        },
+
+        async mountAlbum(path) {
+            if (this.status.is_running) {
+                alert("当前有打标任务正在后台运行，请等待任务结束后再挂载新图库以防止数据库冲突。");
+                return;
+            }
+
+            this.mounting = path;
+            try {
+                const res = await fetch('/api/mount', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: path })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    // 挂载成功，跳回首页看图！
+                    window.location.href = '/';
+                } else {
+                    alert("挂载失败: " + data.message);
+                    this.mounting = null;
+                }
+            } catch (e) {
+                alert("网络错误");
+                this.mounting = null;
+            }
+        },
+
+        async startTagger() {
+            const path = this.newAlbumPath.trim();
+            if (!path) return;
+
+            try {
+                const res = await fetch('/api/tagger/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: path })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    this.newAlbumPath = ''; // 清空输入框
+                    this.fetchStatus();     // 立即抓取一次状态点亮终端
+                } else {
+                    alert("无法启动任务: " + data.message);
+                }
+            } catch (e) {
+                alert("请求失败");
+            }
+        },
+		
+		async removeAlbum(path) {
+            // 弹出原生的确认提示框
+            if (!confirm(`确定要从列表中移除相册吗？\n\n路径: ${path}\n\n注意：这只会将它从列表隐藏，不会删除您的物理图片和数据库文件。`)) {
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/albums', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: path })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    this.fetchAlbums(); // 刷新列表
+                } else {
+                    alert("移除失败: " + data.message);
+                }
+            } catch (e) {
+                alert("网络错误，无法移除");
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

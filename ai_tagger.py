@@ -127,18 +127,58 @@ def handle_index(args):
     print(f"Target Directory: {target_dir}")
     print(f"Database Path: {db_path}")
     
+    new_files_data = [] # 存储 (abs_path, rel_path)
+    
     init_db(db_path)
     
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
+        
+        # --- 【核心修复：老数据库绝对路径热迁移 (防冲突版)】 ---
+        cursor.execute("SELECT id, filepath FROM images")
+        rows = cursor.fetchall()
+        
+        # 先收集数据库里已经存在的相对路径，防止 UNIQUE 冲突
+        existing_rels = {path for _, path in rows if not os.path.isabs(path)}
+        
+        updates = []
+        to_delete = []
+        
+        for img_id, old_path in rows:
+            if os.path.isabs(old_path):
+                try:
+                    rel_path = os.path.relpath(old_path, target_dir).replace('\\', '/')
+                    if not rel_path.startswith(".."):
+                        # 如果转换后的相对路径已经存在于数据库中了，说明这是重复的脏数据，标记删除
+                        if rel_path in existing_rels:
+                            to_delete.append((img_id,))
+                        else:
+                            updates.append((rel_path, img_id))
+                            existing_rels.add(rel_path) # 加入集合防止内部多条绝对路径互相冲突
+                except ValueError:
+                    pass
+                    
+        if to_delete:
+            print(f"🗑️ 发现 {len(to_delete)} 条重复的绝对路径记录，正在清理...")
+            cursor.executemany("DELETE FROM images WHERE id = ?", to_delete)
+            
+        if updates:
+            print(f"🔄 正在将 {len(updates)} 条绝对路径迁移为相对路径...")
+            cursor.executemany("UPDATE images SET filepath = ? WHERE id = ?", updates)
+            
+        conn.commit()
+        if to_delete or updates:
+            print("✅ 路径迁移与清理完成！")
+        # ------------------------------------------
+
+        # 重新获取最新的已索引路径
         cursor.execute("SELECT filepath FROM images")
         indexed_files = {row[0] for row in cursor.fetchall()}
+        
     print(f"Found {len(indexed_files)} images already in the database.")
-
-    # 扫描文件 (转换为相对路径)
-    new_files_data = [] # 存储 (abs_path, rel_path)
-    supported_exts = ('.jpg', '.jpeg', '.png', '.webp', '.bmp')
     
+    # === 【修复：加入磁盘文件扫描逻辑】 ===
+    supported_exts = ('.jpg', '.jpeg', '.png', '.webp', '.bmp')
     for root, dirs, files in os.walk(target_dir, topdown=True):
         # 忽略专属数据文件夹
         if DATA_DIR_NAME in dirs: dirs.remove(DATA_DIR_NAME)
@@ -146,17 +186,19 @@ def handle_index(args):
         for file in files:
             if file.lower().endswith(supported_exts):
                 abs_path = os.path.join(root, file)
-                # 计算相对路径，并统一为正斜杠存储
+                # 计算相对路径，并统一为正斜杠存储，确保与数据库格式一致
                 rel_path = os.path.relpath(abs_path, target_dir).replace('\\', '/')
                 
+                # 如果这个相对路径不在数据库里，才加入待打标队列
                 if rel_path not in indexed_files:
                     new_files_data.append((abs_path, rel_path))
-    
+
     if not new_files_data:
-        print("No new images to index.")
+        print("No new images to index. Everything is up to date.")
         return
     
     print(f"Found {len(new_files_data)} new images. Starting AI tagging...")
+    
     predictor = Predictor()
     predictor.load_model()
 

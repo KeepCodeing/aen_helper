@@ -2,6 +2,9 @@ import os
 import random
 import sqlite3
 import json
+import sys # 【新增】用于获取当前 Python 虚拟环境的绝对路径
+import subprocess
+import threading
 import urllib.parse # 确保顶部有这个导入
 from urllib.parse import unquote
 from flask import Blueprint, render_template, jsonify, request, send_file, redirect, url_for
@@ -290,3 +293,135 @@ def explore_page(subpath=""):
                            current_path=subpath,
                            parent_path=parent_path,
                            page_title=f"目录: {subpath}" if subpath else "本地目录")
+                           
+# ==========================================
+#  系统设置与任务控制 API (新增)
+# ==========================================
+
+@main_bp.route('/settings')
+def settings_page():
+    """配置与相册管理页面"""
+    return render_template('settings.html', page_title="设置与相册管理")
+
+@main_bp.route('/api/albums', methods=['GET'])
+def api_get_albums():
+    """读取已保存的相册列表"""
+    if os.path.exists(config.ALBUMS_FILE):
+        with open(config.ALBUMS_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            return jsonify(data)
+    return jsonify({"albums": []})
+
+@main_bp.route('/api/mount', methods=['POST'])
+def api_mount_album():
+    """挂载指定的相册目录"""
+    data = request.json
+    target_dir = data.get('path', '').strip()
+    
+    if not os.path.exists(target_dir):
+        return jsonify({"success": False, "message": "目录不存在"}), 400
+        
+    db_path = os.path.join(target_dir, config.DATA_DIR_NAME, 'image_tags.db')
+    if not os.path.exists(db_path):
+        return jsonify({"success": False, "message": "该目录下没有找到数据库，请先执行打标"}), 400
+
+    # 动态修改全局配置
+    config.PROJECT_PARENT_DIR = target_dir
+    data_dir = os.path.join(target_dir, config.DATA_DIR_NAME)
+    config.DB_PATH = db_path
+    config.CACHE_FILE = os.path.join(data_dir, 'media_cache.json')
+    config.DB_CACHE_FILE = os.path.join(data_dir, 'db_cache.json')
+    
+    # 执行一次扫描刷新缓存
+    from utils import scan_media_files
+    scan_media_files()
+    
+    return jsonify({"success": True, "message": f"成功挂载: {target_dir}"})
+
+# --- 后台打标进程控制 ---
+
+def _read_subprocess_output(process):
+    """后台线程：实时读取打标程序的输出日志 (修复版)"""
+    for line in iter(process.stdout.readline, ''):
+        if line.strip(): # 过滤掉空行
+            config.CURRENT_TASK["output"] = line.strip()
+            
+    process.stdout.close()
+    return_code = process.wait() # 获取进程退出码
+    
+    config.CURRENT_TASK["is_running"] = False
+    
+    # 【修复】根据退出码判断是真完成还是崩溃了
+    if return_code == 0:
+        config.CURRENT_TASK["output"] = "✅ 打标任务已成功完成！"
+    else:
+        config.CURRENT_TASK["output"] = f"❌ 任务异常终止 (Exit Code: {return_code})。请检查依赖或路径。"
+
+@main_bp.route('/api/tagger/start', methods=['POST'])
+def api_start_tagger():
+    """启动本地 AI 打标程序 (修复版)"""
+    if config.CURRENT_TASK["is_running"]:
+        return jsonify({"success": False, "message": "当前已有打标任务正在运行"}), 400
+        
+    data = request.json
+    target_dir = data.get('path', '').strip()
+    
+    if not target_dir or not os.path.exists(target_dir):
+        return jsonify({"success": False, "message": "无效的目录"}), 400
+
+    try:
+        # 【核心修复】：使用 sys.executable 确保子进程使用与 Flask 完全相同的 Python 虚拟环境
+        process = subprocess.Popen(
+            [sys.executable, "-u", "ai_tagger.py", "--target-dir", target_dir],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, 
+            text=True,
+            bufsize=1
+        )
+        
+        config.CURRENT_TASK["is_running"] = True
+        config.CURRENT_TASK["target_dir"] = target_dir
+        config.CURRENT_TASK["process"] = process
+        config.CURRENT_TASK["output"] = "正在初始化 AI 模型，请稍候..."
+        
+        threading.Thread(target=_read_subprocess_output, args=(process,), daemon=True).start()
+        
+        with open(config.ALBUMS_FILE, 'r+', encoding='utf-8') as f:
+            db_data = json.load(f)
+            if target_dir not in db_data.get("albums", []):
+                db_data.setdefault("albums", []).append(target_dir)
+                f.seek(0)
+                json.dump(db_data, f, ensure_ascii=False, indent=4)
+                f.truncate()
+        
+        return jsonify({"success": True, "message": "打标任务已启动"})
+    except Exception as e:
+        return jsonify({"success": False, "message": f"启动失败: {str(e)}"}), 500
+
+@main_bp.route('/api/tagger/status', methods=['GET'])
+def api_tagger_status():
+    """前端轮询获取当前打标进度的接口"""
+    return jsonify({
+        "is_running": config.CURRENT_TASK["is_running"],
+        "target_dir": config.CURRENT_TASK["target_dir"],
+        "output": config.CURRENT_TASK["output"]
+    })
+
+@main_bp.route('/api/albums', methods=['DELETE'])
+def api_delete_album():
+    """从配置中移除指定的相册路径"""
+    data = request.json
+    target_dir = data.get('path', '').strip()
+    
+    if os.path.exists(config.ALBUMS_FILE):
+        with open(config.ALBUMS_FILE, 'r+', encoding='utf-8') as f:
+            db_data = json.load(f)
+            albums = db_data.get("albums", [])
+            if target_dir in albums:
+                albums.remove(target_dir)
+                f.seek(0)
+                json.dump({"albums": albums}, f, ensure_ascii=False, indent=4)
+                f.truncate()
+                return jsonify({"success": True, "message": "移除成功"})
+                
+    return jsonify({"success": False, "message": "相册不存在于记录中"}), 400
