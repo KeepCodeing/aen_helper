@@ -15,8 +15,10 @@
         </div>
         
         <div class="nav-group right">
-            <div class="filter-bar">
-                
+			<button class="mobile-search-toggle" @click="mobileSearchOpen = !mobileSearchOpen; if(mobileSearchOpen) showNav = true;">
+                <span x-text="mobileSearchOpen ? '✖' : '🔍'"></span>
+            </button>
+            <div class="filter-bar" :class="{ 'mobile-open': mobileSearchOpen }">
                 <select class="filter-select" x-model="searchType" title="搜索目标">
                     <option value="char">👤 搜角色</option>
                     <option value="tag">🏷️ 搜标签</option>
@@ -151,6 +153,7 @@
         display: flex;
         align-items: center;
         gap: 6px;
+		box-shadow: none !important; /* 【新增】：强行去阴影 */
     }
     .search-btn:hover { background-color: #0063b1; }
     .search-btn:active { transform: scale(0.96); }
@@ -188,17 +191,91 @@
 	
 
     /* 移动端适配 */
-    @media (max-width: 768px) {
-        /* 移动端把搜索栏放到底下或者简化 */
-        .nav-group.right { display: none; } /* 暂时隐藏，或者需要单独做移动端UI */
-        /* 或者： */
-        .filter-bar { gap: 4px; }
-        .filter-select { font-size: 0; padding: 0 20px 0 8px; width: 40px; } /* 只显示图标 */
-        .search-input { width: 120px; }
-        .search-input:focus { width: 150px; }
-        .search-btn { font-size: 0; padding: 0 12px; } /* 只显示图标 */
+    .mobile-search-toggle {
+        display: none;
+        background: none;
+        border: none;
+        color: white;
+        font-size: 18px;
+        padding: 0 15px;
+        cursor: pointer;
+        height: 100%;
+        outline: none;
+        transition: transform 0.2s;
+        box-shadow: none !important; /* 【新增】：强行去阴影 */
+        -webkit-tap-highlight-color: transparent; /* 【新增】：去掉移动端点击时的灰色半透明高亮块 */
     }
+	
+    .mobile-search-toggle:active { transform: scale(0.8); }
 
+    /* --- 移动端深度适配 --- */
+    @media (max-width: 768px) {
+        .mobile-search-toggle { display: flex; align-items: center; justify-content: center; }
+        
+        .nav-group.right { flex-shrink: 0; box-shadow: none; }
+        
+        /* 核心逻辑：将整个 Filter Bar 变成隐藏的下拉抽屉 */
+        .filter-bar {
+            position: fixed;
+            top: 50px; /* 紧贴导航栏下方 */
+            left: 0;
+            width: 100vw; /* 占满屏幕宽度 */
+            height: auto;
+            background: #1a1a1a;
+            padding: 15px;
+            box-sizing: border-box;
+            flex-direction: column; /* 垂直排列 */
+            gap: 12px;
+            border-bottom: 1px solid #333;
+			/* box-shadow: 0 10px 20px rgba(0,0,0,0.6); */
+            
+            /* 抽屉动画：默认藏在上方且透明 */
+            transform: translateY(-150%);
+            opacity: 0;
+            pointer-events: none;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s;
+            z-index: 990; /* 层级低于顶部导航栏 */
+        }
+        
+        /* Alpine 激活该 class 时，抽屉滑出 */
+        .filter-bar.mobile-open {
+            transform: translateY(0);
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* 内部表单控件：100% 撑满宽度并增加点击面积 */
+        .filter-select { width: 100%; height: 42px; font-size: 15px; padding: 0 15px; }
+        .search-wrapper { width: 100%; height: 42px; }
+        .search-input { width: 100% !important; height: 100%; font-size: 15px; box-sizing: border-box; }
+        .search-btn {
+			height: 100%;
+			padding: 10px;
+			background-color: #0078d4;
+			color: white;
+			border: none;
+			border-radius: 6px;
+			font-size: 13px;
+			font-weight: 600;
+			cursor: pointer;
+			transition: background 0.2s, transform 0.1s;
+			display: flex;
+			align-items: center;
+			gap: 6px;
+			box-shadow: none !important; /* 【新增】：强行去阴影 */
+		}
+
+        /* 修复自动补全列表的宽度 */
+        .autocomplete-list {
+            width: 100%; 
+            max-width: none;
+            max-height: 40vh; /* 防止列表过长挡住全屏 */
+        }
+        
+        /* 避免抽屉展开时，底部的内容紧贴着它 */
+        .char-grid { padding-top: 70px; }
+    }
+	
     /* --- 网格与卡片 (复用之前的样式) --- */
     .char-grid {
         display: grid;
@@ -238,6 +315,7 @@ function tagsApp() {
         allTags: [],
         suggestions: [],
         selectedIndex: -1, // 新增：当前选中的建议词索引
+		mobileSearchOpen: false, // 【新增】移动端搜索面板开关状态
 
         init() {
             this.loadTagsCache();
@@ -245,7 +323,6 @@ function tagsApp() {
 
             // 监听下拉框变化，一旦改变就存入本地缓存
             this.$watch('searchType', (value) => localStorage.setItem('searchType', value));
-            this.$watch('viewMode', (value) => localStorage.setItem('viewMode', value));
         },
 
         async loadTagsCache() {
@@ -356,6 +433,9 @@ function tagsApp() {
 
         // --- 执行搜索 ---
         performSearch() {
+			// 【新增】执行搜索时自动收起移动端面板
+            this.mobileSearchOpen = false;
+			
             const query = this.searchQuery.trim().replace(/,$/, ''); 
             
             if (this.searchType === 'tag' && query) {
@@ -373,6 +453,11 @@ function tagsApp() {
         },
 
         handleScroll() {
+		// 【新增】如果搜索面板开着，则强制保持导航栏显示
+            if (this.mobileSearchOpen) {
+                this.showNav = true;
+                return;
+            }
             const currentScrollY = window.pageYOffset || document.documentElement.scrollTop;
             if (currentScrollY > this.lastScrollY && currentScrollY > 50) {
                 this.showNav = false;
