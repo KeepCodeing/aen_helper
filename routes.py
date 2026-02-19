@@ -51,17 +51,20 @@ def video_grid_page():
                          page_title="所有视频", 
                          api_url="/api/videos")
 
+@main_bp.route('/folder/')
 @main_bp.route('/folder/<path:folder_path>')
-def folder_view_page(folder_path):
-    """文件夹视图"""
-    # 1. 明确使用 unquote 处理路径，确保 #, %20 等字符恢复原貌
+def folder_view_page(folder_path=""):
+    """文件夹视图（现已支持子文件夹与图片混排）"""
     decoded_path = unquote(folder_path)
     clean_path = to_web_path(decoded_path)
     
+    # 【新增】：提取当前目录下的子文件夹，用于在图片网格的最上方展示
+    folders, _ = get_directory_tree(clean_path)
+    
     return render_template('grid.html', 
-                         page_title=f"📁 {clean_path}", 
-                         # 2. 传给前端 API 的 URL 也要再次编码
-                         api_url=f"/api/folder_data?path={clean_path}")
+                         page_title=f"📁 {clean_path}" if clean_path else "📁 根目录", 
+                         api_url=f"/api/folder_data?path={urllib.parse.quote(clean_path)}",
+                         subfolders=folders) # 把子目录数据传给模板
 
 # --- 页面路由 ---
 
@@ -282,12 +285,13 @@ def serve_media(filepath):
 def explore_page(subpath=""):
     folders, immediate_files = get_directory_tree(subpath)
     
-    # 【核心逻辑】：如果当前目录下全是文件，没有子文件夹了（倒数第二级）
-    # 自动重定向到现有的图片网格页进行浏览
-    if not folders and immediate_files:
-        # 直接跳转到该文件夹的图片流 (调用已有的 /folder/ 路由)
-        return redirect(f"/folder/{urllib.parse.quote(subpath)}")
-        
+    # 【核心逻辑升级】：只要该目录下包含直接的媒体文件，统统重定向到网格页进行混排展示
+    if immediate_files:
+        if subpath:
+            return redirect(f"/folder/{urllib.parse.quote(subpath)}")
+        else:
+            return redirect("/folder/")
+            
     # 计算用于“返回上一级”的父路径
     parent_path = ""
     if subpath:

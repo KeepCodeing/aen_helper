@@ -44,6 +44,29 @@
     </div>
 
     <div class="grid-container">
+		{% if subfolders %}
+            {% for folder in subfolders %}
+                <a href="{{ '/explore/' + folder.path if folder.has_sub else '/folder/' + folder.path }}" class="grid-item folder-card-in-grid">
+                    <div class="char-cover">
+                        {% if folder.has_img and folder.cover %}
+                            <img src="/media/{{ folder.cover }}" loading="lazy" onload="this.classList.add('loaded')">
+                        {% elif folder.count > 0 %}
+                            <div class="video-placeholder-cover">
+                                <span>🎬<br><span style="font-size: 0.8em;">Video/GIF</span></span>
+                            </div>
+                        {% endif %}
+                        <div class="char-overlay"></div>
+                        {% if folder.has_sub %}
+                            <div class="mobile-folder-hint">📂</div>
+                        {% endif %}
+                    </div>
+                    <div class="char-info">
+                        <div class="char-name">{{ folder.name }}</div>
+                        <div class="char-count">{{ folder.count }} 项内容</div>
+                    </div>
+                </a>
+            {% endfor %}
+        {% endif %}
         <template x-for="(file, index) in items" :key="index">
             <div class="grid-item" @click="openModal(index)">
                 <template x-if="isImage(file)">
@@ -121,6 +144,32 @@
     white-space: nowrap;
     background-color: transparent;
     transition: background-color 0.2s;
+}
+/* 混排模式下的文件夹卡片样式 */
+.folder-card-in-grid {
+	text-decoration: none; display: block;
+	border-radius: 4px; border: 1px solid #333;
+	transition: transform 0.2s, border-color 0.2s;
+}
+.folder-card-in-grid:hover {
+	transform: translateY(-5px); border-color: #0078d4;
+	box-shadow: 0 5px 15px rgba(0,0,0,0.5); z-index: 10;
+}
+.folder-card-in-grid .char-cover { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+.folder-card-in-grid .char-cover img { width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.5s; }
+.folder-card-in-grid .char-cover img.loaded { opacity: 1; }
+.folder-card-in-grid .char-overlay { position: absolute; bottom: 0; left: 0; width: 100%; height: 60%; background: linear-gradient(to top, rgba(0,0,0,0.95), transparent); z-index: 1; }
+.folder-card-in-grid .char-info { position: absolute; bottom: 0; left: 0; width: 100%; padding: 12px; box-sizing: border-box; z-index: 2; }
+.folder-card-in-grid .char-name { color: #fff; font-weight: bold; font-size: 1.1em; text-shadow: 0 1px 2px rgba(0,0,0,1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
+.folder-card-in-grid .char-count { color: #ccc; font-size: 0.85em; }
+.folder-card-in-grid .mobile-folder-hint { position: absolute; bottom: 60px; right: 10px; width: 32px; height: 32px; background-color: rgba(0, 0, 0, 0.65); backdrop-filter: blur(4px); border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; z-index: 20; }
+.folder-card-in-grid .video-placeholder-cover { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background-color: #2a2a2a; color: #888; text-align: center; font-size: 1.2em; line-height: 1.2; }
+
+@media (max-width: 768px) {
+	.folder-card-in-grid .char-info { padding: 6px !important; }
+	.folder-card-in-grid .char-name { font-size: 0.8em !important; margin-bottom: 2px !important; }
+	.folder-card-in-grid .char-count { font-size: 0.7em !important; }
+	.folder-card-in-grid .mobile-folder-hint { width: 24px; height: 24px; font-size: 14px; bottom: 45px; right: 4px; }
 }
 </style>
 
