@@ -7,7 +7,7 @@ from urllib.parse import unquote
 from flask import Blueprint, render_template, jsonify, request, send_file, redirect, url_for
 
 # 引入本地配置和工具
-from config import PROJECT_PARENT_DIR, DB_PATH, PAGE_SIZE
+import config
 # [核心修改] 引入 to_web_path
 from utils import MediaState, scan_media_files, get_paginated_list, get_db_connection, natural_sort_key, to_web_path, get_character_groups, get_folders_by_character, DBCache, search_files_paged, search_folders, get_directory_tree
 
@@ -103,7 +103,7 @@ def api_search():
     if not query_str: return jsonify({'files': [], 'has_more': False})
 
     # [修改] 传递 folder 变量给查询函数
-    files, has_more = search_files_paged(query_str, page, PAGE_SIZE, folder_filter=folder)
+    files, has_more = search_files_paged(query_str, page, config.PAGE_SIZE, folder_filter=folder)
     return jsonify({'files': files, 'has_more': has_more})
 
 @main_bp.route('/api/search/folders')
@@ -162,14 +162,14 @@ def api_random_image():
 def api_get_images():
     page = request.args.get('page', 1, type=int)
     seed = request.args.get('seed', None)
-    items, has_more = get_paginated_list(MediaState.image_files, page, PAGE_SIZE, seed=seed)
+    items, has_more = get_paginated_list(MediaState.image_files, page, config.PAGE_SIZE, seed=seed)
     return jsonify({'files': items, 'has_more': has_more})
 
 @main_bp.route('/api/videos')
 def api_get_videos():
     page = request.args.get('page', 1, type=int)
     seed = request.args.get('seed', None)
-    items, has_more = get_paginated_list(MediaState.video_and_gif_files, page, PAGE_SIZE, seed=seed)
+    items, has_more = get_paginated_list(MediaState.video_and_gif_files, page, config.PAGE_SIZE, seed=seed)
     return jsonify({'files': items, 'has_more': has_more})
 
 @main_bp.route('/api/folder_data')
@@ -200,7 +200,7 @@ def api_folder_data():
             filtered_files.append(file_path)
             
     filtered_files.sort(key=natural_sort_key)
-    items, has_more = get_paginated_list(filtered_files, page, PAGE_SIZE)
+    items, has_more = get_paginated_list(filtered_files, page, config.PAGE_SIZE)
     return jsonify({'files': items, 'has_more': has_more})
 
 @main_bp.route('/api/character_images/<path:character_name>')
@@ -210,16 +210,16 @@ def api_character_images(character_name):
     if conn is None: return jsonify([]), 404
         
     page = request.args.get('page', 1, type=int)
-    offset = (page - 1) * PAGE_SIZE
+    offset = (page - 1) * config.PAGE_SIZE
     db_char_name = character_name.replace('_', ' ')
 
     query = "SELECT filepath FROM images WHERE character_name = ? ORDER BY id DESC LIMIT ? OFFSET ?"
     try:
-        cursor = conn.execute(query, (db_char_name, PAGE_SIZE, offset))
+        cursor = conn.execute(query, (db_char_name, config.PAGE_SIZE, offset))
         images = cursor.fetchall()
         # [修复] 同样记得转换路径
         results = [to_web_path(row['filepath']) for row in images]
-        has_more = len(results) == PAGE_SIZE
+        has_more = len(results) == config.PAGE_SIZE
         return jsonify({'files': results, 'has_more': has_more})
     except Exception as e:
         print(f"Char image error: {e}")
@@ -241,8 +241,8 @@ def api_tags_all():
 def api_characters():
     page = request.args.get('page', 1, type=int)
     search = request.args.get('search', '', type=str)
-    chars = get_character_groups(page, PAGE_SIZE, search_query=search)
-    has_more = len(chars) == PAGE_SIZE
+    chars = get_character_groups(page, config.PAGE_SIZE, search_query=search)
+    has_more = len(chars) == config.PAGE_SIZE
     return jsonify({'data': chars, 'has_more': has_more})
 
 # ==========================================
@@ -252,10 +252,11 @@ def api_characters():
 @main_bp.route('/media/<path:filepath>')
 def serve_media(filepath):
     decoded_filepath = unquote(filepath)
-    normalized_filepath = os.path.normpath(decoded_filepath)
-    absolute_path = os.path.join(PROJECT_PARENT_DIR, normalized_filepath)
+    # 将前端传来的相对路径，与当前挂载的根目录拼合成绝对路径读取
+    absolute_path = os.path.abspath(os.path.join(config.PROJECT_PARENT_DIR, decoded_filepath))
     
-    if not os.path.abspath(absolute_path).startswith(os.path.abspath(PROJECT_PARENT_DIR)):
+    # 安全校验：确保请求的文件在挂载的目录下，防止路径穿越攻击 (../../)
+    if not absolute_path.startswith(os.path.abspath(config.PROJECT_PARENT_DIR)):
         return "Forbidden", 403
     
     if os.path.exists(absolute_path):

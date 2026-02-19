@@ -5,7 +5,7 @@ import re
 import random
 import traceback
 import binascii
-from config import CACHE_FILE, DB_PATH, PROJECT_PARENT_DIR, DB_CACHE_FILE
+import config
 
 # --- 全局状态 ---
 class MediaState:
@@ -21,9 +21,9 @@ class DBCache:
     @classmethod
     def load(cls, force_rescan=False):
         # 1. 尝试从本地文件加载
-        if not force_rescan and os.path.exists(DB_CACHE_FILE):
+        if not force_rescan and os.path.exists(config.DB_CACHE_FILE):
             try:
-                with open(DB_CACHE_FILE, 'r', encoding='utf-8') as f:
+                with open(config.DB_CACHE_FILE, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     cls.all_tags = data.get("all_tags", [])
                     cls.characters = data.get("characters", [])
@@ -39,7 +39,7 @@ class DBCache:
         
         # 3. 写入本地文件
         try:
-            with open(DB_CACHE_FILE, 'w', encoding='utf-8') as f:
+            with open(config.DB_CACHE_FILE, 'w', encoding='utf-8') as f:
                 json.dump({"all_tags": cls.all_tags, "characters": cls.characters}, f, ensure_ascii=False)
             print("数据库缓存已保存到本地。")
         except IOError as e:
@@ -67,7 +67,7 @@ class DBCache:
             cls.all_tags = sorted(chars_for_tags + tags, key=lambda x: x['count'], reverse=True)
 
             # === B. 构建全量角色封面数据 (去掉 LIMIT 和 OFFSET) ===
-            deep_pattern = os.path.join(PROJECT_PARENT_DIR, '%', '%')
+            deep_pattern = os.path.join(config.PROJECT_PARENT_DIR, '%', '%')
             sql = f"""
                 SELECT 
                     CASE WHEN character_name IS NULL OR character_name = '' THEN 'Others / OC' ELSE character_name END as name,
@@ -106,26 +106,29 @@ def natural_sort_key(s):
             for text in re.split(r'(\d+)', s)]
 
 def get_db_connection():
-    if not os.path.exists(DB_PATH):
+    if not os.path.exists(config.DB_PATH):
         return None
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 def to_web_path(local_path):
+    """【核心兼容补丁】：把所有路径洗成相对路径"""
     if not local_path: return ""
     norm_path = os.path.normpath(local_path)
+    # 如果传来的是老数据库里的绝对路径，动态剥离成相对路径
     if os.path.isabs(norm_path):
         try:
-            rel = os.path.relpath(norm_path, PROJECT_PARENT_DIR)
-            norm_path = rel
+            rel = os.path.relpath(norm_path, config.PROJECT_PARENT_DIR)
+            if not rel.startswith(".."):
+                norm_path = rel
         except ValueError: pass
     return norm_path.replace('\\', '/')
 
 def scan_media_files(force_rescan=False):
-    if not force_rescan and os.path.exists(CACHE_FILE):
+    if not force_rescan and os.path.exists(config.CACHE_FILE):
         try:
-            with open(CACHE_FILE, 'r', encoding='utf-8') as f:
+            with open(config.CACHE_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 MediaState.image_files = data.get("images", [])
                 MediaState.video_and_gif_files = data.get("videos_and_gifs", [])
@@ -135,12 +138,17 @@ def scan_media_files(force_rescan=False):
     image_list, video_and_gif_list = [], []
     image_formats = ('.png', '.jpg', '.jpeg', '.bmp', '.webp')
     video_formats = ('.mp4', '.webm', '.mov', '.mkv', '.avi', '.gif')
-    project_dir_name = os.path.basename(os.getcwd())
 
-    for root, dirs, files in os.walk(PROJECT_PARENT_DIR, topdown=True):
-        if project_dir_name in dirs: dirs.remove(project_dir_name)
+    # 扫描指定的挂载目录
+    for root, dirs, files in os.walk(config.PROJECT_PARENT_DIR, topdown=True):
+        # 忽略专属的数据文件夹
+        if config.DATA_DIR_NAME in dirs: dirs.remove(config.DATA_DIR_NAME)
         for file in files:
-            web_path = to_web_path(os.path.join(root, file))
+            abs_path = os.path.join(root, file)
+            # 计算并存入相对路径
+            rel_path = os.path.relpath(abs_path, config.PROJECT_PARENT_DIR)
+            web_path = rel_path.replace('\\', '/')
+            
             file_lower = file.lower()
             if file_lower.endswith(image_formats): image_list.append(web_path)
             elif file_lower.endswith(video_formats): video_and_gif_list.append(web_path)
@@ -149,7 +157,8 @@ def scan_media_files(force_rescan=False):
     video_and_gif_list.sort(key=natural_sort_key)
 
     try:
-        with open(CACHE_FILE, 'w', encoding='utf-8') as f:
+        os.makedirs(os.path.dirname(config.CACHE_FILE), exist_ok=True)
+        with open(config.CACHE_FILE, 'w', encoding='utf-8') as f:
             json.dump({"images": image_list, "videos_and_gifs": video_and_gif_list}, f)
     except IOError: pass
 

@@ -1,16 +1,16 @@
 # config.py
 import os
 
-# 获取当前工作目录
 BASE_DIR = os.getcwd()
-# 项目父目录 (根据原逻辑)
-PROJECT_PARENT_DIR = r"E:\rise and shine\2D\XP\Splus\AI"
-# 媒体缓存文件
-CACHE_FILE = 'media_cache.json'
-# --- [新增] 数据库聚合查询缓存文件 ---
-DB_CACHE_FILE = 'db_cache.json'
 
-# 数据库路径
-DB_PATH = "image_tags.db"
+# 专属数据文件夹名称
+DATA_DIR_NAME = ".aen_data"
+
+# 这些变量将在 app.py 启动时被动态赋值，不要在这里写死了
+PROJECT_PARENT_DIR = ""
+DB_PATH = ""
+CACHE_FILE = ""
+DB_CACHE_FILE = ""
+
 # 分页大小
 PAGE_SIZE = 24
