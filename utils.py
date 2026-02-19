@@ -367,15 +367,15 @@ def search_folders(query_str):
     finally: conn.close()
     
 def get_directory_tree(current_path=""):
-    """获取指定相对路径下的子文件夹列表与文件状态"""
-    # 统一路径分隔符并去掉首尾斜杠
+    """获取指定相对路径下的子文件夹列表与文件状态 (增强版：优先图片封面)"""
     current_path = current_path.replace('\\', '/').strip("/")
     folders = {}
     immediate_files = []
-
     prefix = current_path + "/" if current_path else ""
     
-    # 【修复】：将所有的图片和视频列表合并遍历
+    # 定义图片扩展名用于判断
+    IMG_EXTS = ('.png', '.jpg', '.jpeg', '.webp', '.bmp')
+    
     all_media_files = MediaState.image_files + MediaState.video_and_gif_files
     
     for f in all_media_files:
@@ -385,29 +385,43 @@ def get_directory_tree(current_path=""):
             parts = remainder.split('/')
             
             if len(parts) == 1:
-                # 只有一级，说明是直接放在当前目录下的图片/视频
+                # 直属文件
                 immediate_files.append(remainder)
             else:
-                # 说明存在子文件夹
+                # 子文件夹内容
                 folder_name = parts[0]
+                is_image_file = f_normalized.lower().endswith(IMG_EXTS)
+
                 if folder_name not in folders:
+                    # 初始化文件夹数据结构
                     folders[folder_name] = {
                         'name': folder_name,
                         'path': prefix + folder_name,
-                        'cover': f_normalized, # 默认用内部第一张图当封面
-                        'has_sub': False,      # 是否还有下一级文件夹
+                        'cover': None,         # 稍后决定
+                        'has_sub': False,      # 是否还有深层子文件夹
                         'has_img': False,      # 这个子文件夹里是否有直接的图片
                         'count': 0
                     }
                 
-                folders[folder_name]['count'] += 1
+                f_data = folders[folder_name]
+                f_data['count'] += 1
                 
-                # 深度判断
+                # --- [核心修改] 智能封面选择逻辑 ---
+                if is_image_file:
+                    f_data['has_img'] = True
+                    # 如果当前没有封面，或者当前的封面不是图片，则替换为这个图片
+                    current_cover = f_data['cover']
+                    if current_cover is None or not current_cover.lower().endswith(IMG_EXTS):
+                         f_data['cover'] = f_normalized
+                else:
+                    # 如果是视频，且当前没有任何封面，暂时用视频顶替
+                    if f_data['cover'] is None:
+                        f_data['cover'] = f_normalized
+
+                # 深度判断 (保持不变)
                 if len(parts) > 2:
-                    folders[folder_name]['has_sub'] = True
-                elif len(parts) == 2:
-                    folders[folder_name]['has_img'] = True
-    
+                    f_data['has_sub'] = True
+
     # 按自然拼写顺序排序
     folder_list = sorted(list(folders.values()), key=lambda x: natural_sort_key(x['name']))
     return folder_list, immediate_files
