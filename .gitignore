@@ -101,8 +101,9 @@ Thumbs.db
 *.sqlite3
 
 # 排除本地扫描生成的媒体文件缓存和缩略图
-cache.json
 media/
 data/
 uploads/
+cache.json
 media_cache.json
+db_cache.json

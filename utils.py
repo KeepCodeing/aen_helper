@@ -5,12 +5,99 @@ import re
 import random
 import traceback
 import binascii
-from config import CACHE_FILE, DB_PATH, PROJECT_PARENT_DIR
+from config import CACHE_FILE, DB_PATH, PROJECT_PARENT_DIR, DB_CACHE_FILE
 
 # --- 全局状态 ---
 class MediaState:
     image_files = []
     video_and_gif_files = []
+
+# --- 数据库统一缓存类 ---
+class DBCache:
+    all_tags = []
+    characters = []
+    _loaded = False
+
+    @classmethod
+    def load(cls, force_rescan=False):
+        # 1. 尝试从本地文件加载
+        if not force_rescan and os.path.exists(DB_CACHE_FILE):
+            try:
+                with open(DB_CACHE_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    cls.all_tags = data.get("all_tags", [])
+                    cls.characters = data.get("characters", [])
+                    cls._loaded = True
+                    print(f"成功加载数据库缓存: 标签 {len(cls.all_tags)} 个, 角色 {len(cls.characters)} 个")
+                    return
+            except Exception as e:
+                print(f"读取数据库缓存失败，将重新生成: {e}")
+        
+        # 2. 如果无缓存或强制刷新，执行全量 SQL 查询
+        print("开始全量查询数据库并构建缓存 (这可能需要几秒钟)...")
+        cls._refresh_from_db()
+        
+        # 3. 写入本地文件
+        try:
+            with open(DB_CACHE_FILE, 'w', encoding='utf-8') as f:
+                json.dump({"all_tags": cls.all_tags, "characters": cls.characters}, f, ensure_ascii=False)
+            print("数据库缓存已保存到本地。")
+        except IOError as e:
+            print(f"保存数据库缓存失败: {e}")
+
+    @classmethod
+    def _refresh_from_db(cls):
+        conn = get_db_connection()
+        if not conn: return
+        try:
+            # === A. 构建 Tag 自动补全数据 ===
+            tag_query = """
+                SELECT t.name, COUNT(it.image_id) as cnt
+                FROM tags t JOIN image_tags it ON t.id = it.tag_id GROUP BY t.name
+            """
+            tags = [{'name': row['name'], 'count': row['cnt'], 'type': 'tag'} for row in conn.execute(tag_query).fetchall()]
+
+            char_query = "SELECT character_name, COUNT(*) as cnt FROM images GROUP BY character_name"
+            chars_for_tags = []
+            for row in conn.execute(char_query).fetchall():
+                raw_name = row['character_name']
+                display_name = f"char:{raw_name}" if raw_name else "Others / OC"
+                chars_for_tags.append({'name': display_name, 'count': row['cnt'], 'type': 'char'})
+            
+            cls.all_tags = sorted(chars_for_tags + tags, key=lambda x: x['count'], reverse=True)
+
+            # === B. 构建全量角色封面数据 (去掉 LIMIT 和 OFFSET) ===
+            deep_pattern = os.path.join(PROJECT_PARENT_DIR, '%', '%')
+            sql = f"""
+                SELECT 
+                    CASE WHEN character_name IS NULL OR character_name = '' THEN 'Others / OC' ELSE character_name END as name,
+                    COUNT(*) as count,
+                    (SELECT filepath FROM images img2 JOIN image_tags it ON img2.id = it.image_id JOIN tags t ON it.tag_id = t.id WHERE (img2.character_name = images.character_name OR (images.character_name IS NULL AND img2.character_name IS NULL)) AND t.name = 'looking at viewer' LIMIT 1) as cover_preferred,
+                    (SELECT filepath FROM images img3 WHERE (img3.character_name = images.character_name OR (images.character_name IS NULL AND img3.character_name IS NULL)) LIMIT 1) as cover_fallback
+                FROM images 
+                GROUP BY character_name 
+                HAVING MAX(CASE WHEN filepath LIKE ? THEN 1 ELSE 0 END) = 1
+                ORDER BY name ASC 
+            """
+            cls.characters = []
+            for row in conn.execute(sql, [deep_pattern]).fetchall():
+                raw_cover = row['cover_preferred'] or row['cover_fallback']
+                cls.characters.append({
+                    'name': row['name'], 
+                    'count': row['count'], 
+                    'cover': to_web_path(raw_cover)
+                })
+            
+            cls._loaded = True
+        except Exception as e:
+            print(f"数据库查询失败: {e}")
+        finally:
+            conn.close()
+
+    @classmethod
+    def get_all_tags(cls):
+        if not cls._loaded: cls.load()
+        return cls.all_tags
 
 # --- 辅助函数 ---
 
@@ -136,62 +223,23 @@ class TagCache:
 # --- 核心查询功能 ---
 
 def get_character_groups(page, page_size, search_query=None):
-    """
-    获取角色列表，包含：
-    1. 搜索过滤
-    2. [新功能] 隐藏仅存在于根目录的角色
-    """
-    conn = get_db_connection()
-    if not conn: return []
-    offset = (page - 1) * page_size
-    params = []
+    """从内存中过滤和分页，性能极高"""
+    if not DBCache._loaded:
+        DBCache.load()
     
-    # 构建 HAVING 子句
-    having_clauses = []
-
-    # 1. 搜索条件
+    # 1. 获取全量缓存列表
+    chars = DBCache.characters
+    
+    # 2. 内存过滤 (替代 SQL 的 LIKE)
     if search_query:
-        having_clauses.append("name LIKE ?")
-        params.append(f"%{search_query}%")
+        search_lower = search_query.lower()
+        chars = [c for c in chars if search_lower in c['name'].lower()]
     
-    # 2. [核心过滤] 深度检测
-    # 目的：只显示至少有一张图片位于子文件夹的角色
-    # 逻辑：文件路径必须匹配 "Root/Folder/File" 的结构 (至少两级深度)
-    # os.path.join(Root, '%', '%') -> E:\Root\%\% (Windows) 或 /Root/%/% (Linux)
-    deep_pattern = os.path.join(PROJECT_PARENT_DIR, '%', '%')
+    # 3. 内存分页
+    start = (page - 1) * page_size
+    end = start + page_size
     
-    # MAX(case) = 1 表示该角色下至少有一张符合条件的图
-    having_clauses.append("MAX(CASE WHEN filepath LIKE ? THEN 1 ELSE 0 END) = 1")
-    params.append(deep_pattern)
-
-    where_sql = ""
-    if having_clauses:
-        where_sql = "HAVING " + " AND ".join(having_clauses)
-
-    sql = f"""
-        SELECT 
-            CASE WHEN character_name IS NULL OR character_name = '' THEN 'Others / OC' ELSE character_name END as name,
-            COUNT(*) as count,
-            (SELECT filepath FROM images img2 JOIN image_tags it ON img2.id = it.image_id JOIN tags t ON it.tag_id = t.id WHERE (img2.character_name = images.character_name OR (images.character_name IS NULL AND img2.character_name IS NULL)) AND t.name = 'looking at viewer' LIMIT 1) as cover_preferred,
-            (SELECT filepath FROM images img3 WHERE (img3.character_name = images.character_name OR (images.character_name IS NULL AND img3.character_name IS NULL)) LIMIT 1) as cover_fallback
-        FROM images 
-        GROUP BY character_name 
-        {where_sql} 
-        ORDER BY name ASC 
-        LIMIT ? OFFSET ?
-    """
-    
-    try:
-        results = []
-        rows = conn.execute(sql, params + [page_size, offset]).fetchall()
-        for row in rows:
-            raw_cover = row['cover_preferred'] or row['cover_fallback']
-            results.append({'name': row['name'], 'count': row['count'], 'cover': to_web_path(raw_cover)})
-        return results
-    except Exception as e:
-        print(f"[DB Error] Get Characters: {e}")
-        return []
-    finally: conn.close()
+    return chars[start:end]
 
 def get_folders_by_character(character_name):
     conn = get_db_connection()

@@ -8,7 +8,7 @@ from flask import Blueprint, render_template, jsonify, request, send_file, redir
 # 引入本地配置和工具
 from config import PROJECT_PARENT_DIR, DB_PATH, PAGE_SIZE
 # [核心修改] 引入 to_web_path
-from utils import MediaState, scan_media_files, get_paginated_list, get_db_connection, natural_sort_key, to_web_path, get_character_groups, get_folders_by_character, TagCache, search_files_paged, search_folders
+from utils import MediaState, scan_media_files, get_paginated_list, get_db_connection, natural_sort_key, to_web_path, get_character_groups, get_folders_by_character, DBCache, search_files_paged, search_folders
 
 # 创建蓝图
 main_bp = Blueprint('main', __name__)
@@ -17,8 +17,8 @@ main_bp = Blueprint('main', __name__)
 @main_bp.record
 def on_blueprint_setup(setup_state):
     """蓝图注册时初始化缓存"""
-    print("Initializing Tag Cache...")
-    TagCache.refresh()
+    print("Initializing Database Cache...")
+    DBCache.load()
 
 # ==========================================
 #  页面路由 (Page Routes)
@@ -127,7 +127,7 @@ def character_folders_page(character_name):
 @main_bp.route('/rescan')
 def rescan():
     scan_media_files(force_rescan=True)
-    TagCache.refresh() # 重新扫描时也刷新标签缓存
+    DBCache.load(force_rescan=True) # 强制刷新数据库查询缓存并覆盖本地文件
     referrer = request.headers.get("Referer")
     if referrer:
         return redirect(referrer)
@@ -222,7 +222,7 @@ def api_character_folders(character_name):
 
 @main_bp.route('/api/tags/all')
 def api_tags_all():
-    return jsonify(TagCache.get_all())
+    return jsonify(DBCache.get_all_tags())
 
 @main_bp.route('/api/characters')
 def api_characters():
