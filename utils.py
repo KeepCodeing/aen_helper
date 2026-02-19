@@ -339,7 +339,8 @@ def _build_search_sql(query_str):
     if not where_conditions: return None, None
     return f"{base_query} WHERE {' AND '.join(where_conditions)}", params
 
-def search_files_paged(query_str, page, page_size):
+# utils.py
+def search_files_paged(query_str, page, page_size, folder_filter=None):
     conn = get_db_connection()
     if not conn: return [], False
     try:
@@ -353,7 +354,7 @@ def search_files_paged(query_str, page, page_size):
         if not abs_filepaths:
             return [], False
 
-        # 2. 复用聚合函数，获取按数量排好序的文件夹列表 (保证和文件夹视图顺序完全一致)
+        # 2. 复用聚合函数，获取按数量排好序的文件夹列表
         ordered_folders = _aggregate_files_to_folders(abs_filepaths)
         
         # 3. 将图片按其所在的文件夹分组，并转换为 Web 相对路径
@@ -367,17 +368,22 @@ def search_files_paged(query_str, page, page_size):
             else:
                 folder_name = "" # 根目录
                 
+            # --- [核心新增] 如果传入了 folder_filter，则丢弃不属于该文件夹的图片 ---
+            if folder_filter is not None and folder_name != folder_filter:
+                continue
+                
             if folder_name not in folder_to_files:
                 folder_to_files[folder_name] = []
             folder_to_files[folder_name].append(web_path)
         
-        # 4. 根据排好序的文件夹依次取出图片，且确保每个文件夹内的图片按 1,2,3... 自然排序
+        # 4. 根据排好序的文件夹依次取出图片
         final_ordered_files = []
         for folder in ordered_folders:
             folder_name = folder['name']
             files_in_folder = folder_to_files.get(folder_name, [])
-            files_in_folder.sort(key=natural_sort_key) # 局部自然排序
-            final_ordered_files.extend(files_in_folder)
+            if files_in_folder:
+                files_in_folder.sort(key=natural_sort_key) # 局部自然排序
+                final_ordered_files.extend(files_in_folder)
             
         # 5. 在内存中进行分页切片
         start = (page - 1) * page_size

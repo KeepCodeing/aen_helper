@@ -2,6 +2,7 @@ import os
 import random
 import sqlite3
 import json
+import urllib.parse # 确保顶部有这个导入
 from urllib.parse import unquote
 from flask import Blueprint, render_template, jsonify, request, send_file, redirect, url_for
 
@@ -65,13 +66,21 @@ def folder_view_page(folder_path):
 def search_page():
     """搜索结果页 (图片流模式)"""
     query = request.args.get('q', '')
+    folder = request.args.get('folder', None) # [新增] 接收文件夹参数
+    
     if query:
-        api_url = f"/api/search?q={query}"
-        title = f"搜索: {query}"
+        api_url = f"/api/search?q={urllib.parse.quote(query)}"
+        # [新增] 如果存在文件夹限制，拼接到 API URL 并修改页面标题
+        if folder is not None:
+            api_url += f"&folder={urllib.parse.quote(folder)}"
+            display_folder = folder if folder else "根目录"
+            title = f"搜索: {query} ({display_folder})"
+        else:
+            title = f"搜索: {query}"
     else:
         api_url = "" 
         title = "搜索"
-    # 新增传入 search_query
+        
     return render_template('grid.html', page_title=title, api_url=api_url, is_search=True, search_query=query)
 
 @main_bp.route('/search/folders')
@@ -89,11 +98,12 @@ def api_search():
     """搜索文件 API"""
     page = request.args.get('page', 1, type=int)
     query_str = request.args.get('q', '', type=str)
+    folder = request.args.get('folder', None) # [新增] 接收文件夹参数
     
     if not query_str: return jsonify({'files': [], 'has_more': False})
 
-    # 使用 utils 中的新逻辑
-    files, has_more = search_files_paged(query_str, page, PAGE_SIZE)
+    # [修改] 传递 folder 变量给查询函数
+    files, has_more = search_files_paged(query_str, page, PAGE_SIZE, folder_filter=folder)
     return jsonify({'files': files, 'has_more': has_more})
 
 @main_bp.route('/api/search/folders')

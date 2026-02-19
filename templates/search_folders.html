@@ -21,7 +21,7 @@
     <div class="grid-container char-grid" @scroll.window="handleScroll()">
         
         <template x-for="folder in folders" :key="folder.name">
-            <a :href="'/folder/' + encodeURIComponent(folder.name)" class="char-card">
+            <a :href="'/search?q=' + encodeURIComponent(query) + '&folder=' + encodeURIComponent(folder.name)" class="char-card">
                 <div class="char-cover">
                     <img :src="'/media/' + folder.cover" loading="lazy" @load="$el.classList.add('loaded')">
                     <div class="char-overlay"></div>
