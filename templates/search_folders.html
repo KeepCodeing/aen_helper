@@ -7,12 +7,12 @@
 
     <div class="nav" :class="{ 'nav-hidden': !showNav }">
         <div class="nav-group left">
-            <a href="/tags">⬅ 标签索引</a>
+            <a href="#" @click.prevent="goBack()">⬅ 返回</a>
             <span style="color: #444;">|</span>
-            <div class="nav-title">搜索结果 (文件夹): {{ search_query }}</div>
+            <div class="nav-title">搜索结果 (文件夹): {{ search_query }} <span x-show="folderFilter" x-text="'(' + folderFilter + ')'"></span></div>
         </div>
-		<div class="nav-group right">
-            <a :href="'/search?q=' + encodeURIComponent(query)" 
+        <div class="nav-group right">
+            <a :href="'/search?q=' + encodeURIComponent(query) + (folderFilter ? '&folder=' + encodeURIComponent(folderFilter) : '')" 
                @click.prevent="window.location.replace($el.href)" 
                class="folder-btn">🖼️ 全部图片</a>
         </div>
@@ -62,8 +62,9 @@ function searchFoldersApp() {
         loading: true,
         showNav: true,
         lastScrollY: 0,
-        // 修复点 2：移除外层单引号。tojson 会自动生成双引号包裹的 JS 字符串并转义内部字符
         query: {{ search_query | tojson }},
+        // 接收后端传来的 folder_filter
+        folderFilter: {{ (folder_filter or '') | tojson }}, 
 
         init() {
             this.fetchData();
@@ -75,9 +76,15 @@ function searchFoldersApp() {
                 return;
             }
             try {
-                // 修复点 3：确保 query 传入前已经被清洗（防止残留的双引号）
                 const cleanQuery = this.query.replace(/^["']|["']$/g, '');
-                const res = await fetch('/api/search/folders?q=' + encodeURIComponent(cleanQuery));
+                let apiUrl = '/api/search/folders?q=' + encodeURIComponent(cleanQuery);
+                
+                // 如果存在作者过滤，拼接到 API URL
+                if (this.folderFilter) {
+                    apiUrl += '&folder=' + encodeURIComponent(this.folderFilter);
+                }
+                
+                const res = await fetch(apiUrl);
                 if (!res.ok) throw new Error('Search failed');
                 this.folders = await res.json();
             } catch (e) {
@@ -86,8 +93,22 @@ function searchFoldersApp() {
             } finally {
                 this.loading = false;
             }
-        },
+        }, // <=== 修复点：就是这里必须有一个逗号
 
+		goBack() {
+            // 如果有历史记录，并且上一个页面是本站
+            if (window.history.length > 1 && document.referrer.includes(window.location.host)) {
+                window.history.back(); 
+            } else {
+                // 兜底逻辑：如果是新标签页打开没有历史，有作者过滤就回目录，否则回标签页
+                if (this.folderFilter) {
+                    window.location.href = '/explore/' + encodeURIComponent(this.folderFilter);
+                } else {
+                    window.location.href = '/tags';
+                }
+            }
+        },
+		
         handleScroll() {
             const currentScrollY = window.pageYOffset || document.documentElement.scrollTop;
             this.showNav = !(currentScrollY > this.lastScrollY && currentScrollY > 50);

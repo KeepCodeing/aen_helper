@@ -407,17 +407,47 @@ def search_files_paged(query_str, page, page_size, folder_filter=None):
     finally: 
         conn.close()
 
-def search_folders(query_str):
+def search_folders(query_str, folder_filter=None):
     conn = get_db_connection()
     if not conn: return []
     try:
         sql_base, params = _build_search_sql(query_str)
         if not sql_base: return []
         rows = conn.execute(sql_base, params).fetchall()
-        return _aggregate_files_to_folders([row['filepath'] for row in rows])
+        
+        abs_filepaths = [row['filepath'] for row in rows]
+        if not abs_filepaths: return []
+        
+        # --- 【核心修复：在聚合之前，过滤掉不属于该目录的图片】 ---
+        if folder_filter is not None:
+            filtered_paths = []
+            for abs_path in abs_filepaths:
+                web_path = to_web_path(abs_path)
+                if not web_path: continue
+                
+                # 提取图片所在的相对文件夹路径
+                if '/' in web_path:
+                    folder_name = web_path.rsplit('/', 1)[0]
+                else:
+                    folder_name = ""
+                    
+                # 逻辑判断：要求图片必须是在这个文件夹下，或者是它的子文件夹下
+                # 例如 folder_filter="tsm2330"，那么 "tsm2330" 和 "tsm2330/album1" 都算匹配
+                is_match = (folder_name == folder_filter) or folder_name.startswith(folder_filter + "/")
+                if is_match:
+                    filtered_paths.append(abs_path)
+                    
+            # 用过滤后的路径替换掉原本的所有路径
+            abs_filepaths = filtered_paths
+            if not abs_filepaths: return []
+        # -----------------------------------------------------
+
+        return _aggregate_files_to_folders(abs_filepaths)
     except Exception as e:
-        print(f"Search folders error: {e}"); return []
-    finally: conn.close()
+        print(f"Search folders error: {e}")
+        return []
+    finally: 
+        conn.close()
     
 def get_directory_tree(current_path=""):
     """获取指定相对路径下的子文件夹列表与文件状态 (增强版：优先图片封面)"""

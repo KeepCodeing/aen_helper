@@ -88,11 +88,18 @@ def search_page():
 
 @main_bp.route('/search/folders')
 def search_folders_page():
-    """[新增] 搜索结果页 (文件夹模式)"""
+    """搜索结果页 (文件夹模式)"""
     query = request.args.get('q', '')
+    folder = request.args.get('folder', None) # 【新增】接收目录过滤参数
+    
+    title = f"搜索文件夹: {query}"
+    if folder:
+        title += f" ({folder})"
+        
     return render_template('search_folders.html', 
                          search_query=query,
-                         page_title=f"搜索文件夹: {query}")
+                         folder_filter=folder, # 【新增】传给前端
+                         page_title=title)
 
 # --- API 接口 ---
 
@@ -111,11 +118,14 @@ def api_search():
 
 @main_bp.route('/api/search/folders')
 def api_search_folders():
-    """[新增] 搜索文件夹 API"""
+    """搜索文件夹 API"""
     query_str = request.args.get('q', '', type=str)
+    folder = request.args.get('folder', None)  # 【核心修复1】：获取前端传来的 folder 参数
+    
     if not query_str: return jsonify([])
     
-    folders = search_folders(query_str)
+    # 【核心修复2】：将 folder_filter 传给底层的 search_folders 函数
+    folders = search_folders(query_str, folder_filter=folder)
     return jsonify(folders)
     
 # --- 角色相关页面 ---

@@ -36,9 +36,9 @@
         </div>
         <div class="nav-group right">
             {% if character_name %}
-                <a href="/tags/folders/{{ character_name }}" class="folder-btn" @click.prevent="window.location.replace($el.href)">📂 文件夹模式</a>
+                <a href="/tags/folders/{{ character_name | urlencode }}" class="folder-btn" @click.prevent="window.location.replace($el.href)">📂 文件夹模式</a>
             {% elif is_search and search_query %}
-                <a href="/search/folders?q={{ search_query }}" class="folder-btn" @click.prevent="window.location.replace($el.href)">📂 文件夹模式</a>
+                <a href="#" class="folder-btn" @click.prevent="toggleFolderMode()">📂 文件夹模式</a>
             {% endif %}
         </div>
     </div>
@@ -103,6 +103,26 @@
         </div>
     </div>
 </div>
+
+<style>
+.nav a.folder-btn {
+    background-color: #005a9e;
+    color: #fff;
+    font-weight: bold;
+}
+.nav a {
+    color: #eee;
+    text-decoration: none;
+    padding: 0 15px;
+    font-size: 14px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+    background-color: transparent;
+    transition: background-color 0.2s;
+}
+</style>
 
 <script>
 function galleryApp(apiUrl) {
@@ -203,11 +223,29 @@ function galleryApp(apiUrl) {
         isImage(p) { return p ? /\.(png|jpg|jpeg|webp|bmp)$/i.test(p) : false; },
         isVideo(p) { return p ? /\.(mp4|webm|mov|mkv|gif)$/i.test(p) : false; },
         hasFolder(p) { return p && (p.includes('/') || p.includes('\\')); },
-        getFolderLink(p) {
+		getFolderLink(p) {
             if (!p) return '#';
             const norm = p.replace(/\\/g, '/');
             const lastSlash = norm.lastIndexOf('/');
             return lastSlash !== -1 ? '/folder/' + encodeURIComponent(norm.substring(0, lastSlash)) : '#';
+        },
+        
+        // 【新增】：智能切换到文件夹模式，保留作者目录过滤
+        toggleFolderMode() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const q = urlParams.get('q');
+            const folder = urlParams.get('folder');
+
+            if (q) {
+                let targetUrl = `/search/folders?q=${encodeURIComponent(q)}`;
+                // 如果当前在特定作者目录下搜索，必须带上 folder 参数
+                if (folder) {
+                    targetUrl += `&folder=${encodeURIComponent(folder)}`;
+                }
+                window.location.replace(targetUrl);
+            } else {
+                window.location.replace('/tags');
+            }
         }
     }
 }

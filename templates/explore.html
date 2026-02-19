@@ -269,11 +269,13 @@ function exploreApp() {
             if (!queryRaw) return;
             
             let query = queryRaw;
+            // 自动修正角色前缀逻辑
             if (this.searchType === 'char' && !query.startsWith('char:')) {
                 query = 'char:' + query;
             }
 
-            const url = `/search?q=${encodeURIComponent(query)}&folder=${encodeURIComponent(this.currentPath)}`;
+            // 【核心修改】：将默认跳转路由从 /search 改为 /search/folders
+            const url = `/search/folders?q=${encodeURIComponent(query)}&folder=${encodeURIComponent(this.currentPath)}`;
             window.location.href = url;
         },
 
