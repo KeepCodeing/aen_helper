@@ -19,7 +19,13 @@
             <a href="/tags">角色</a>
         </div>
         <div class="nav-group right">
-            <a href="/search" class="folder-btn">🔍 搜索</a>
+            {% if character_name %}
+                <a href="/tags/folders/{{ character_name }}" class="folder-btn">📂 文件夹模式</a>
+            {% elif is_search and search_query %}
+                <a href="/search/folders?q={{ search_query }}" class="folder-btn">📂 文件夹模式</a>
+            {% else %}
+                <a href="/search" class="folder-btn">🔍 搜索</a>
+            {% endif %}
         </div>
     </div>
 

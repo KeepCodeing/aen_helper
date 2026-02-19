@@ -19,11 +19,6 @@
                     <option value="char">👤 搜角色</option>
                     <option value="tag">🏷️ 搜标签</option>
                 </select>
-
-                <select class="filter-select" x-model="viewMode" title="结果展示方式">
-                    <option value="all">🖼️ 全部图片</option>
-                    <option value="folder">📂 文件夹归类</option>
-                </select>
                 
                 <div class="search-wrapper">
                     <input type="text" 
@@ -62,10 +57,7 @@
     <div class="grid-container char-grid" @scroll.window="handleScroll()">
         
         <template x-for="char in characters" :key="char.name">
-            <a :href="viewMode === 'folder' 
-                      ? '/tags/folders/' + encodeURIComponent(char.name) 
-                      : '/tags/random/' + encodeURIComponent(char.name)" 
-               class="char-card">
+            <a :href="'/tags/folders/' + encodeURIComponent(char.name)" class="char-card">
                
                 <div class="char-cover">
                     <img :src="'/media/' + char.cover" loading="lazy" :alt="char.name" @load="$el.classList.add('loaded')">
@@ -240,7 +232,6 @@ function tagsApp() {
         // 1. 默认值改为 tag 和 folder，并优先尝试从本地缓存读取
         searchQuery: '',
         searchType: localStorage.getItem('searchType') || 'tag',
-        viewMode: localStorage.getItem('viewMode') || 'folder',
         
         allTags: [],
         suggestions: [],
@@ -367,11 +358,8 @@ function tagsApp() {
             
             if (this.searchType === 'tag' && query) {
                 const encodedQ = encodeURIComponent(query);
-                if (this.viewMode === 'folder') {
-                    window.location.href = '/search/folders?q=' + encodedQ;
-                } else {
-                    window.location.href = '/search?q=' + encodedQ;
-                }
+                // 【修改】强制默认跳转到文件夹搜索页
+                window.location.href = '/search/folders?q=' + encodedQ;
                 return;
             }
 

@@ -71,7 +71,8 @@ def search_page():
     else:
         api_url = "" 
         title = "搜索"
-    return render_template('grid.html', page_title=title, api_url=api_url, is_search=True)
+    # 新增传入 search_query
+    return render_template('grid.html', page_title=title, api_url=api_url, is_search=True, search_query=query)
 
 @main_bp.route('/search/folders')
 def search_folders_page():
@@ -113,9 +114,11 @@ def tags_index_page():
 @main_bp.route('/tags/random/<path:character_name>')
 def character_gallery_page(character_name):
     decoded_name = unquote(character_name)
+    # 新增传入 character_name
     return render_template('grid.html', 
                          page_title=f"角色: {decoded_name}", 
-                         api_url=f"/api/character_images/{character_name}")
+                         api_url=f"/api/character_images/{character_name}",
+                         character_name=decoded_name)
 
 @main_bp.route('/tags/folders/<path:character_name>')
 def character_folders_page(character_name):

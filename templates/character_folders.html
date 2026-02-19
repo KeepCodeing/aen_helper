@@ -11,6 +11,9 @@
             <span style="color: #444;">|</span>
             <div class="nav-title">{{ character_name }} 的图集</div>
         </div>
+		<div class="nav-group right">
+			<a :href="'/tags/random/' + encodeURIComponent(charName)" class="folder-btn">🖼️ 全部图片</a>
+		</div>
     </div>
 
     <div class="grid-container char-grid" @scroll.window="handleScroll()">
@@ -58,6 +61,14 @@
     .char-name { color: #fff; font-weight: bold; font-size: 1.1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
     .char-count { color: #ccc; font-size: 0.85em; }
     .loader-trigger { grid-column: 1 / -1; text-align: center; padding: 30px; color: #666; }
+	/* 右侧功能组 */
+	.nav-group.right {
+		display: flex;
+		align-items: center;
+		height: 100%;
+		flex-shrink: 0; /* 移动端禁止挤压右侧 */
+		margin-left: auto; /* 【新增】强制将该元素推至最右侧 */
+	}
 </style>
 
 <script>
