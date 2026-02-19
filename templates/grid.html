@@ -15,7 +15,11 @@
             {% elif request.path.startswith('/tags/random/') %}
                 <a href="/tags">⬅ 返回角色</a>
             {% elif is_search %}
-                <a href="/tags">⬅ 返回搜索</a>
+                {% if request.args.get('folder') %}
+                    <a href="#" @click.prevent="goBack()">⬅ 返回上级</a>
+                {% else %}
+                    <a href="/tags">⬅ 标签索引</a>
+                {% endif %}
             {% else %}
                 <a href="/">🏠 首页</a>
             {% endif %}
@@ -26,7 +30,7 @@
             {% if not request.path.startswith('/tags/random/') and not is_search and not request.path.startswith('/folder/') %}
                 <a href="/grid" x-show="!baseApiUrl.includes('/api/images')">图片</a>
                 <a href="/videos" x-show="!baseApiUrl.includes('/api/videos')">视频</a>
-                <a href="/tags">搜索</a>
+                <a href="/tags">角色</a>
                 <a href="/explore">目录</a>
             {% endif %}
         </div>
@@ -155,11 +159,16 @@ function galleryApp(apiUrl) {
 		goBack() {
             // 如果有历史记录，并且上一个页面是本站（防止跳转到外部网站）
             if (window.history.length > 1 && document.referrer.includes(window.location.host)) {
-                window.history.back(); // 完美退回上一个页面（如 /grid 或 /explore），且保留滚动位置
+                window.history.back(); // 完美退回上一个页面，保留滚动位置
             } else {
                 // 如果是新标签页打开，没有历史记录，提供兜底跳转
                 if (this.baseApiUrl.includes('folder_data')) {
                     window.location.href = '/explore'; 
+                } else if (window.location.search.includes('folder=')) {
+                    // [核心新增] 如果是搜索结果的文件夹内，兜底退回对应的搜索文件夹页
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const q = urlParams.get('q') || '';
+                    window.location.href = '/search/folders?q=' + encodeURIComponent(q);
                 } else {
                     window.location.href = '/';
                 }
