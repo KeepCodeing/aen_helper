@@ -9,7 +9,7 @@
         <div class="nav-group left">
             {% if current_path %}
                 {% if parent_path %}
-                    <a href="/explore/{{ parent_path }}">⬅ 返回上一级</a>
+                    <a href="/explore/{{ parent_url_path }}">⬅ 返回上一级</a>
                 {% else %}
                     <a href="/explore">⬅ 返回根目录</a>
                 {% endif %}
@@ -61,7 +61,7 @@
 
     <div class="grid-container char-grid" style="padding-top: 60px;">
         {% for folder in folders %}
-            <a href="{{ '/explore/' + folder.path if folder.has_sub else '/folder/' + folder.path }}" class="char-card">
+            <a href="{{ '/explore/' + folder.url_path if folder.has_sub else '/folder/' + folder.url_path }}" class="char-card">
                 
                 <div class="char-cover">
                     {% if folder.has_img and folder.cover %}

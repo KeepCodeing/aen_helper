@@ -5,7 +5,7 @@ import json
 import sys # 【新增】用于获取当前 Python 虚拟环境的绝对路径
 import subprocess
 import threading
-import urllib.parse # 确保顶部有这个导入
+import urllib
 from urllib.parse import unquote
 from flask import Blueprint, render_template, jsonify, request, send_file, redirect, url_for
 
@@ -293,13 +293,11 @@ def serve_media(filepath):
 def explore_page(subpath=""):
     folders, immediate_files = get_directory_tree(subpath)
     
-    # 【核心逻辑升级】：只要该目录下包含直接的媒体文件，统统重定向到网格页进行混排展示
-    if immediate_files:
-        if subpath:
-            return redirect(f"/folder/{urllib.parse.quote(subpath)}")
-        else:
-            return redirect("/folder/")
-            
+    # 【核心逻辑】：如果当前目录下全是文件，没有子文件夹了（倒数第二级）
+    if not folders and immediate_files:
+        # 【修复 1】：直接跳转时，也必须对带有 # 等特殊字符的路径进行编码，注意 safe='/' 防止斜杠被转义
+        return redirect(f"/folder/{urllib.parse.quote(subpath, safe='/')}")
+        
     # 计算用于“返回上一级”的父路径
     parent_path = ""
     if subpath:
@@ -313,7 +311,10 @@ def explore_page(subpath=""):
                            folders=folders, 
                            has_immediate_files=len(immediate_files) > 0,
                            current_path=subpath,
+                           # 【修复 2】：单独给前端传递预编码的当前路径和父路径
+                           current_url_path=urllib.parse.quote(subpath, safe='/') if subpath else "",
                            parent_path=parent_path,
+                           parent_url_path=urllib.parse.quote(parent_path, safe='/') if parent_path else "",
                            page_title=f"目录: {subpath}" if subpath else "本地目录")
                            
 # ==========================================

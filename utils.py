@@ -6,6 +6,7 @@ import random
 import traceback
 import binascii
 import config
+import urllib
 
 # --- 全局状态 ---
 class MediaState:
@@ -486,9 +487,11 @@ def get_directory_tree(current_path=""):
                     folders[folder_name] = {
                         'name': folder_name,
                         'path': prefix + folder_name,
-                        'cover': None,         # 稍后决定
-                        'has_sub': False,      # 是否还有深层子文件夹
-                        'has_img': False,      # 这个子文件夹里是否有直接的图片
+                        # 【新增】：专门用于前端 HTML 标签安全渲染的 URL 编码路径
+                        'url_path': urllib.parse.quote(prefix + folder_name, safe='/'),
+                        'cover': None,         
+                        'has_sub': False,      
+                        'has_img': False,      
                         'count': 0
                     }
                 
