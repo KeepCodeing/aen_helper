@@ -42,7 +42,7 @@
             </div>
         </div>
 
-        <div class="panel tagger-panel">
+        <div class="panel tagger-panel tagger-module">
             <h2 class="panel-title">✨ 新增相册 (AI 智能打标)</h2>
             <p class="panel-desc">输入本地文件夹的绝对路径，开始后台扫描与识别</p>
 
@@ -163,6 +163,83 @@
 	.album-actions { display: flex; align-items: center; gap: 10px; margin-left: 15px; }
     .delete-btn { background: #444; color: #fff; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; transition: background 0.2s; }
     .delete-btn:hover { background: #d13438; }
+	
+	/* =========================================
+       移动端深度适配 (合并优化版)
+       ========================================= */
+    @media (max-width: 768px) {
+        .settings-layout { padding: 15px; flex-direction: column; }
+        .input-group { flex-direction: column; }
+        .start-btn { padding: 12px; }
+        
+        /* 隐藏打标模块，手机端保持清爽 */
+        .tagger-module { display: none !important; }
+        
+        /* 让面板在手机上更紧凑 */
+        .panel { padding: 15px !important; min-width: auto; }
+
+        /* --- 相册卡片移动端专属布局 --- */
+        .album-card { 
+            flex-direction: column; 
+            align-items: flex-start; /* 改为左对齐，取消居中 */
+            text-align: left; 
+            gap: 12px; 
+            padding: 16px;
+        }
+        
+        /* 隐藏原本占用一整行的大图标 */
+        .album-icon { 
+            display: none; 
+        }
+        
+        /* 路径信息区域横向铺满 */
+        .album-info { 
+            width: 100%; 
+        }
+        
+        /* 路径文字：允许换行、长单词强制折行 */
+        .album-path { 
+            direction: ltr; 
+            white-space: normal; 
+            word-break: break-all; 
+            font-size: 0.95em;
+            line-height: 1.5;
+            color: #ddd;
+        }
+        
+        /* 巧妙利用伪元素，在路径文字开头补上一个小号文件夹图标 */
+        .album-path::before {
+            content: '🗂️ ';
+            margin-right: 4px;
+        }
+
+        /* 底部操作按钮区域 */
+        .album-actions { 
+            margin-left: 0; 
+            width: 100%; 
+            display: flex; 
+            gap: 10px; /* 两个按钮之间的间距 */
+        }
+        
+        /* 进入图库按钮：横向拉伸占满主要空间，方便手指点击 */
+        .mount-btn { 
+            flex: 1; 
+            margin-left: 0;
+            padding: 12px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 14px;
+        }
+        
+        /* 垃圾桶按钮：固定大小，放在右侧 */
+        .delete-btn { 
+            padding: 12px 16px; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+    }
 </style>
 
 <script>
