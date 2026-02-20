@@ -451,3 +451,36 @@ def api_delete_album():
                 return jsonify({"success": True, "message": "移除成功"})
                 
     return jsonify({"success": False, "message": "相册不存在于记录中"}), 400
+    
+@main_bp.route('/api/image_tags')
+def api_image_tags():
+    """获取单张图片的所有关联标签"""
+    filepath = request.args.get('path', '')
+    if not filepath: 
+        return jsonify([])
+    
+    conn = get_db_connection()
+    if not conn: 
+        return jsonify([])
+    
+    try:
+        # 兼容 Windows 和 Unix 的路径斜杠，使用 LIKE 模糊匹配绝对路径的尾部
+        db_path_query_win = '%' + filepath.replace('/', '\\')
+        db_path_query_unix = '%' + filepath.replace('\\', '/')
+        
+        sql = """
+            SELECT t.name 
+            FROM tags t 
+            JOIN image_tags it ON t.id = it.tag_id 
+            JOIN images i ON it.image_id = i.id 
+            WHERE i.filepath LIKE ? OR i.filepath LIKE ?
+        """
+        rows = conn.execute(sql, (db_path_query_win, db_path_query_unix)).fetchall()
+        tags = [row['name'] for row in rows]
+        
+        return jsonify(tags)
+    except Exception as e:
+        print(f"获取图片标签失败: {e}")
+        return jsonify([])
+    finally:
+        conn.close()
