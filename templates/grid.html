@@ -463,8 +463,8 @@ function galleryApp(apiUrl) {
         prev() { 
             if (this.currentIndex > 0) this.currentIndex--; 
         },
-        isImage(p) { return p ? /\.(png|jpg|jpeg|webp|bmp)$/i.test(p) : false; },
-        isVideo(p) { return p ? /\.(mp4|webm|mov|mkv|gif)$/i.test(p) : false; },
+        isImage(p) { return p ? /\.(png|jpg|jpeg|webp|bmp|gif)$/i.test(p) : false; },
+        isVideo(p) { return p ? /\.(mp4|webm|mov|mkv)$/i.test(p) : false; },
         hasFolder(p) { return p && (p.includes('/') || p.includes('\\')); },
 		getFolderLink(p) {
             if (!p) return '#';
