@@ -295,17 +295,30 @@ body.index-page {
     object-fit: contain;
 }
 
-/* 隐形导航区域 - 限制在媒体高度内 */
+/* =========================================
+   模态框：点击换页热区 (Hitbox) 优化
+   ========================================= */
 .nav-hitbox {
-    position: absolute;
-    top: 0;
-    height: 100%;
-    width: 15%; /* 点击响应范围 */
-    z-index: 2010;
-    cursor: pointer;
+	position: absolute;
+	top: 0;
+	/* 【核心优化】：腾出底部 80px 空间，不要挡住视频的进度条、倍速和音量调节 */
+	bottom: 80px; 
+	/* 宽度各占 35%，给屏幕正中间留出 30% 可以用来直接点击暂停/播放视频 */
+	width: 35%; 
+	z-index: 10;
+	cursor: pointer;
 }
 .prev-hitbox { left: 0; }
 .next-hitbox { right: 0; }
+
+/* 移动端专属微调 */
+@media (max-width: 768px) {
+	.nav-hitbox {
+		/* 手机端既然有了滑动切换手势，我们就把点击区再缩小一点，防止误触视频画面 */
+		bottom: 120px; 
+		width: 25%; 
+	}
+}
 
 .modal-close {
     position: absolute;

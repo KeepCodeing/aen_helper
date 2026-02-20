@@ -188,16 +188,20 @@
         
         <div style="width: 100%; height: 100%; display: flex; justify-content: center; align-items: center;">
             <template x-if="modalOpen && currentItem">
-                <div class="modal-media-container" @click.stop>
+                <div class="modal-media-container" 
+                     @click.stop 
+                     @touchstart="touchStartX = $event.changedTouches[0].screenX; touchStartY = $event.changedTouches[0].screenY"
+                     @touchend="handleSwipe($event)">
+                     
                     <div class="nav-hitbox prev-hitbox" @click.stop="prev()"></div>
                     <div class="nav-hitbox next-hitbox" @click.stop="next()"></div>
 
                     <template x-if="isImage(currentItem)">
-						<img :src="'/media/' + encodePath(currentItem)" class="modal-content">
-					</template>
-					<template x-if="isVideo(currentItem)">
-						<video :src="'/media/' + encodePath(currentItem)" class="modal-content" controls autoplay></video>
-					</template>
+                        <img :src="'/media/' + encodePath(currentItem)" class="modal-content">
+                    </template>
+                    <template x-if="isVideo(currentItem)">
+                        <video :src="'/media/' + encodePath(currentItem)" class="modal-content" controls autoplay loop playsinline muted></video>
+                    </template>
                 </div>
             </template>
         </div>
@@ -497,6 +501,9 @@ function galleryApp(apiUrl) {
         currentImageTags: [],
         tagSearchQuery: '',
 		
+		touchStartX: 0,
+        touchStartY: 0,
+		
 		init() {
             // 组件加载时预取标签数据用于补全
             this.loadTagsCache();
@@ -758,6 +765,22 @@ function galleryApp(apiUrl) {
 		encodePath(p) {
             if (!p) return '';
             return p.split('/').map(encodeURIComponent).join('/');
+        },
+		
+		handleSwipe(e) {
+            const endX = e.changedTouches[0].screenX;
+            const endY = e.changedTouches[0].screenY;
+            const diffX = this.touchStartX - endX;
+            const diffY = this.touchStartY - endY;
+            
+            // 判定：必须是横向滑动（X轴位移大于Y轴位移），且滑动距离超过 40 像素，防止误触
+            if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 40) {
+                if (diffX > 0) {
+                    this.next(); // 向左划，看下一张
+                } else {
+                    this.prev(); // 向右划，看上一张
+                }
+            }
         },
         
         // 【新增】：智能切换到文件夹模式，保留作者目录过滤
