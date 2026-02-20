@@ -89,7 +89,7 @@
                 <a href="{{ '/explore/' + folder.path if folder.has_sub else '/folder/' + folder.path }}" class="grid-item folder-card-in-grid">
                     <div class="char-cover">
                         {% if folder.has_img and folder.cover %}
-                            <img src="/media/{{ folder.cover }}" loading="lazy" onload="this.classList.add('loaded')">
+                            <img src="/media/{{ folder.cover | replace('#', '%23') | replace('?', '%3F') }}" loading="lazy" onload="this.classList.add('loaded')">
                         {% elif folder.count > 0 %}
                             <div class="video-placeholder-cover">
                                 <span>🎬<br><span style="font-size: 0.8em;">Video/GIF</span></span>
@@ -110,13 +110,13 @@
         <template x-for="(file, index) in items" :key="index">
             <div class="grid-item" @click="openModal(index)">
                 <template x-if="isImage(file)">
-                    <img :src="'/media/' + file" loading="lazy" @load="$el.classList.add('loaded')">
-                </template>
-                <template x-if="isVideo(file)">
-                    <video :src="'/media/' + file" muted loop playsinline
-                           onmouseover="this.play()" onmouseout="this.pause()"
-                           onloadeddata="this.classList.add('loaded')"></video>
-                </template>
+					<img :src="'/media/' + encodePath(file)" loading="lazy" @load="$el.classList.add('loaded')">
+				</template>
+				<template x-if="isVideo(file)">
+					<video :src="'/media/' + encodePath(file)" muted loop playsinline
+						   onmouseover="this.play()" onmouseout="this.pause()"
+						   onloadeddata="this.classList.add('loaded')"></video>
+				</template>
 
                 <a :href="getFolderLink(file)"
                    class="grid-folder-btn"
@@ -156,11 +156,11 @@
                     <div class="nav-hitbox next-hitbox" @click.stop="next()"></div>
 
                     <template x-if="isImage(currentItem)">
-                        <img :src="'/media/' + currentItem" class="modal-content">
-                    </template>
-                    <template x-if="isVideo(currentItem)">
-                        <video :src="'/media/' + currentItem" class="modal-content" controls autoplay></video>
-                    </template>
+						<img :src="'/media/' + encodePath(currentItem)" class="modal-content">
+					</template>
+					<template x-if="isVideo(currentItem)">
+						<video :src="'/media/' + encodePath(currentItem)" class="modal-content" controls autoplay></video>
+					</template>
                 </div>
             </template>
         </div>
@@ -275,7 +275,7 @@ function galleryApp(apiUrl) {
         baseApiUrl: cleanApiUrl,
         isFolderView: cleanApiUrl.includes('folder_data') {% if request.args.get('folder') and has_subfolders is defined and not has_subfolders %} || true {% endif %},
         seed: (cleanApiUrl.includes('/api/images') || cleanApiUrl.includes('/api/videos')) ? Date.now() : null,
-		searchQuery: {{ (search_query or '') | tojson }},
+		searchQuery: {{ request.args.get('q', '') | tojson }},
         searchType: 'tag',
         allTags: [],
         suggestions: [],
@@ -471,6 +471,11 @@ function galleryApp(apiUrl) {
             const norm = p.replace(/\\/g, '/');
             const lastSlash = norm.lastIndexOf('/');
             return lastSlash !== -1 ? '/folder/' + encodeURIComponent(norm.substring(0, lastSlash)) : '#';
+        },
+		
+		encodePath(p) {
+            if (!p) return '';
+            return p.split('/').map(encodeURIComponent).join('/');
         },
         
         // 【新增】：智能切换到文件夹模式，保留作者目录过滤

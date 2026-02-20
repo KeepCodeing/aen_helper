@@ -65,7 +65,7 @@
                 
                 <div class="char-cover">
                     {% if folder.has_img and folder.cover %}
-                        <img src="/media/{{ folder.cover }}" loading="lazy" onload="this.classList.add('loaded')">
+                        <img src="/media/{{ folder.cover | replace('#', '%23') | replace('?', '%3F') }}" loading="lazy" onload="this.classList.add('loaded')">
                     {% elif folder.count > 0 %}
                         <div class="video-placeholder-cover">
                             <span>🎬<br><span style="font-size: 0.8em;">Video/GIF</span></span>
