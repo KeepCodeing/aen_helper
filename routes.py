@@ -293,8 +293,10 @@ def serve_media(filepath):
 def explore_page(subpath=""):
     folders, immediate_files = get_directory_tree(subpath)
     
-    # 【核心逻辑】：如果当前目录下全是文件，没有子文件夹了（倒数第二级）
-    if not folders and immediate_files:
+    # 【核心逻辑优化】：只要当前目录下包含图片/视频文件（无论是纯文件还是与文件夹混合），
+    # 都直接重定向到具备完整图片分页能力的 folder 视图。
+    # folder 视图（grid.html）会自动将子文件夹按顺序渲染在左边/前面，图片同级排列在后面。
+    if immediate_files:
         # 【修复 1】：直接跳转时，也必须对带有 # 等特殊字符的路径进行编码，注意 safe='/' 防止斜杠被转义
         return redirect(f"/folder/{urllib.parse.quote(subpath, safe='/')}")
         

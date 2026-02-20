@@ -507,6 +507,7 @@ function galleryApp(apiUrl) {
 		init() {
             // 组件加载时预取标签数据用于补全
             this.loadTagsCache();
+			this.loadMore();
         },
 
         handleScroll() {
