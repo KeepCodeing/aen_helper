@@ -354,9 +354,12 @@ def api_mount_album():
     config.CACHE_FILE = os.path.join(data_dir, 'media_cache.json')
     config.DB_CACHE_FILE = os.path.join(data_dir, 'db_cache.json')
     
-    # 执行一次扫描刷新缓存
-    from utils import scan_media_files
+    # 【核心修复 1】：引入 DBCache，并在挂载新相册后，清空内存数据并触发重新加载
+    from utils import scan_media_files, DBCache
     scan_media_files()
+    
+    DBCache._loaded = False
+    DBCache.load()
     
     return jsonify({"success": True, "message": f"成功挂载: {target_dir}"})
 

@@ -74,8 +74,8 @@ class DBCache:
             cls.all_tags = sorted(chars_for_tags + tags, key=lambda x: x['count'], reverse=True)
 
             # === B. 构建全量角色封面数据 (去掉 LIMIT 和 OFFSET) ===
-            deep_pattern = os.path.join(config.PROJECT_PARENT_DIR, '%', '%')
-            sql = f"""
+            # 【核心修复 2】：移除深层绝对路径的 HAVING 过滤限制，因为每个相册是独立的 DB
+            sql = """
                 SELECT 
                     CASE WHEN character_name IS NULL OR character_name = '' THEN 'Others / OC' ELSE character_name END as name,
                     COUNT(*) as count,
@@ -83,11 +83,10 @@ class DBCache:
                     (SELECT filepath FROM images img3 WHERE (img3.character_name = images.character_name OR (images.character_name IS NULL AND img3.character_name IS NULL)) LIMIT 1) as cover_fallback
                 FROM images 
                 GROUP BY character_name 
-                HAVING MAX(CASE WHEN filepath LIKE ? THEN 1 ELSE 0 END) = 1
                 ORDER BY name ASC 
             """
             cls.characters = []
-            for row in conn.execute(sql, [deep_pattern]).fetchall():
+            for row in conn.execute(sql).fetchall():
                 raw_cover = row['cover_preferred'] or row['cover_fallback']
                 cls.characters.append({
                     'name': row['name'], 
