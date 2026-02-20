@@ -76,9 +76,7 @@
             {% if character_name %}
                 <a href="/tags/folders/{{ character_name | urlencode }}" class="folder-btn" @click.prevent="window.location.replace($el.href)">📂 文件夹模式</a>
             {% elif is_search and search_query %}
-                {% if not request.args.get('folder') or (has_subfolders is defined and has_subfolders) %}
                 <a href="#" class="folder-btn" @click.prevent="toggleFolderMode()">📂 文件夹模式</a>
-                {% endif %}
             {% endif %}
         </div>
     </div>
@@ -273,7 +271,7 @@ function galleryApp(apiUrl) {
         modalOpen: false,
         currentIndex: 0,
         baseApiUrl: cleanApiUrl,
-        isFolderView: cleanApiUrl.includes('folder_data') {% if request.args.get('folder') and has_subfolders is defined and not has_subfolders %} || true {% endif %},
+        isFolderView: cleanApiUrl.includes('folder_data') {% if not is_search and request.args.get('folder') and has_subfolders is defined and not has_subfolders %} || true {% endif %},
         seed: (cleanApiUrl.includes('/api/images') || cleanApiUrl.includes('/api/videos')) ? Date.now() : null,
 		searchQuery: {{ request.args.get('q', '') | tojson }},
         searchType: 'tag',
