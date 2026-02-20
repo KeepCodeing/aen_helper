@@ -322,21 +322,31 @@ function galleryApp(apiUrl) {
                 this.loading = false;
             }
         },
+		
 		goBack() {
-            // 如果有历史记录，并且上一个页面是本站（防止跳转到外部网站）
+            // 如果有完整的历史记录，完美退回上一个页面（能保留你看图的滚动位置）
             if (window.history.length > 1 && document.referrer.includes(window.location.host)) {
-                window.history.back(); // 完美退回上一个页面，保留滚动位置
+                window.history.back(); 
             } else {
-                // 如果是新标签页打开，没有历史记录，提供兜底跳转
+                // 【核心兜底优化】：没有历史记录时的强制寻路
                 if (this.baseApiUrl.includes('folder_data')) {
-                    window.location.href = '/explore'; 
+                    // 1. 如果当前在文件夹里，强行退回上一级目录
+                    let currentFolder = decodeURIComponent(window.location.pathname.replace('/folder/', ''));
+                    let parts = currentFolder.split('/');
+                    parts.pop(); // 砍掉最后一层
+                    if (parts.length > 0 && parts[0] !== '') {
+                        window.location.href = '/explore/' + parts.map(encodeURIComponent).join('/');
+                    } else {
+                        window.location.href = '/explore'; 
+                    }
                 } else if (window.location.search.includes('folder=')) {
-                    // [核心新增] 如果是搜索结果的文件夹内，兜底退回对应的搜索文件夹页
+                    // 2. 如果当前在某文件夹的搜索结果中，强行退回该文件夹！
                     const urlParams = new URLSearchParams(window.location.search);
-                    const q = urlParams.get('q') || '';
-                    window.location.href = '/search/folders?q=' + encodeURIComponent(q);
+                    const folder = urlParams.get('folder');
+                    window.location.href = '/folder/' + folder.split('/').map(encodeURIComponent).join('/');
                 } else {
-                    window.location.href = '/';
+                    // 3. 全局搜索等其他情况
+                    window.location.href = '/tags';
                 }
             }
         },
@@ -411,7 +421,7 @@ function galleryApp(apiUrl) {
             });
         },
 
-        performSearch() {
+		performSearch() {
             const queryRaw = this.searchQuery.trim().replace(/,$/, ''); 
             if (!queryRaw) return;
             
@@ -420,12 +430,10 @@ function galleryApp(apiUrl) {
                 query = 'char:' + query;
             }
 
-            // 【核心】：判断是否在文件夹上下文中，以便继承作者目录过滤
             let url = `/search?q=${encodeURIComponent(query)}`;
             const urlParams = new URLSearchParams(window.location.search);
             let folderContext = urlParams.get('folder');
             
-            // 如果用户是在看图的时候直接搜（如：/folder/tsm2330 路径下）
             if (window.location.pathname.startsWith('/folder/')) {
                 folderContext = decodeURIComponent(window.location.pathname.replace('/folder/', ''));
             }
@@ -434,8 +442,12 @@ function galleryApp(apiUrl) {
                 url += `&folder=${encodeURIComponent(folderContext)}`;
             }
 
-            // grid 页面本身就是显示图片流，所以直接带参数跳转回 /search（图片流模式）
-            window.location.href = url;
+            // 【核心修复】：如果已经在搜索页，则替换当前历史记录；否则压入新历史
+            if (window.location.pathname.startsWith('/search')) {
+                window.location.replace(url);
+            } else {
+                window.location.href = url;
+            }
         },
 
         openModal(idx) {
