@@ -276,17 +276,17 @@ def api_characters():
 @main_bp.route('/media/<path:filepath>')
 def serve_media(filepath):
     decoded_filepath = unquote(filepath)
-    # 将前端传来的相对路径，与当前挂载的根目录拼合成绝对路径读取
     absolute_path = os.path.abspath(os.path.join(config.PROJECT_PARENT_DIR, decoded_filepath))
     
-    # 安全校验：确保请求的文件在挂载的目录下，防止路径穿越攻击 (../../)
     if not absolute_path.startswith(os.path.abspath(config.PROJECT_PARENT_DIR)):
         return "Forbidden", 403
     
-    if os.path.exists(absolute_path):
+    # 【核心修复】：必须加上 and os.path.isfile(absolute_path)
+    if os.path.exists(absolute_path) and os.path.isfile(absolute_path):
         return send_file(absolute_path)
     else:
-        return "File not found", 404
+        # 如果是文件夹或不存在，安全返回 404，拒绝崩溃
+        return "File not found or is a directory", 404
         
 @main_bp.route('/explore')
 @main_bp.route('/explore/<path:subpath>')

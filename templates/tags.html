@@ -65,7 +65,7 @@
             <a :href="'/tags/folders/' + encodeURIComponent(char.name)" class="char-card">
                
                 <div class="char-cover">
-                    <img :src="'/media/' + char.cover" loading="lazy" :alt="char.name" @load="$el.classList.add('loaded')">
+                    <img :src="'/media/' + char.cover.split('/').map(encodeURIComponent).join('/')" loading="lazy" :alt="char.name" @load="$el.classList.add('loaded')">
                     <div class="char-overlay"></div>
                 </div>
                 <div class="char-info">
