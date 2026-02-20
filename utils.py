@@ -20,6 +20,10 @@ class DBCache:
 
     @classmethod
     def load(cls, force_rescan=False):
+        # 【修复1：防空拦截】
+        if not getattr(config, 'DB_CACHE_FILE', None):
+            return
+            
         # 1. 尝试从本地文件加载
         if not force_rescan and os.path.exists(config.DB_CACHE_FILE):
             try:
@@ -39,11 +43,14 @@ class DBCache:
         
         # 3. 写入本地文件
         try:
+            # 【修复2：确保写入前，父级目录 .aen_data 已经被创建】
+            os.makedirs(os.path.dirname(config.DB_CACHE_FILE), exist_ok=True)
             with open(config.DB_CACHE_FILE, 'w', encoding='utf-8') as f:
                 json.dump({"all_tags": cls.all_tags, "characters": cls.characters}, f, ensure_ascii=False)
             print("数据库缓存已保存到本地。")
-        except IOError as e:
+        except Exception as e:
             print(f"保存数据库缓存失败: {e}")
+
 
     @classmethod
     def _refresh_from_db(cls):
