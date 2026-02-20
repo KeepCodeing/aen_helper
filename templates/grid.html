@@ -75,7 +75,7 @@
 
             {% if character_name %}
                 <a href="/tags/folders/{{ character_name | urlencode }}" class="folder-btn" @click.prevent="window.location.replace($el.href)">📂 文件夹模式</a>
-            {% elif is_search and search_query %}
+            {% elif is_search and search_query and has_subfolders %}
                 <a href="#" class="folder-btn" @click.prevent="toggleFolderMode()">📂 文件夹模式</a>
             {% endif %}
         </div>
