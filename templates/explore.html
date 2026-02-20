@@ -25,7 +25,13 @@
         
         <div class="nav-group right">
             {% if current_path %}
-            <div class="filter-bar">
+            <button class="mobile-search-toggle" 
+                    @click="mobileSearchOpen = true; $nextTick(() => document.getElementById('searchInput').focus())" 
+                    x-show="!mobileSearchOpen">
+                🔍
+            </button>
+
+            <div class="filter-bar" :class="{ 'mobile-open': mobileSearchOpen }" x-cloak>
                 <div class="search-wrapper">
                     <input type="text" 
                            class="search-input" 
@@ -35,7 +41,7 @@
                            @keydown.arrow-down.prevent="navigateSuggestions(1)"
                            @keydown.arrow-up.prevent="navigateSuggestions(-1)"
                            @keydown.enter.prevent="handleEnter()"
-                           @keydown.escape.prevent="suggestions = []; selectedIndex = -1"
+                           @keydown.escape.prevent="suggestions = []; selectedIndex = -1; mobileSearchOpen = false"
                            id="searchInput">
                     
                     <div class="autocomplete-list" 
@@ -53,7 +59,8 @@
                     </div>
                 </div>
 
-                <button class="search-btn" @click="performSearch()">🔍 搜索</button>
+                <button class="search-btn" @click="performSearch()">🔍<span class="desktop-text"> 搜索</span></button>
+                <button class="cancel-search-btn" @click="mobileSearchOpen = false">取消</button>
             </div>
             {% endif %}
 		</div>
@@ -130,37 +137,18 @@
         background-color: #2a2a2a; color: #888; text-align: center; font-size: 1.2em; line-height: 1.2;
     }
 
-    /* 移动端优化 */
-    @media (max-width: 768px) {
-        .char-grid {
-            grid-template-columns: repeat(4, 1fr) !important;
-            gap: 8px !important;
-            padding: 60px 10px 20px 10px !important;
-        }
-        .char-info { padding: 6px !important; }
-        .char-name { font-size: 0.75em !important; margin-bottom: 2px !important; }
-        .char-count { font-size: 0.65em !important; }
-        .mobile-folder-hint { width: 24px; height: 24px; font-size: 14px; bottom: 45px; right: 4px; }
-    }
-	
-	/* 搜索栏样式同步 tags.html */
+    /* =========================================
+       搜索栏基础样式 (PC端)
+       ========================================= */
     .filter-bar { display: flex; align-items: center; gap: 8px; margin-right: 10px; height: 32px; }
-    .filter-select { 
-        background-color: #333; color: #eee; border: 1px solid #555; 
-        padding: 0 24px 0 10px; border-radius: 4px; font-size: 12px; height: 100%;
-        appearance: none; 
-        background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
-        background-repeat: no-repeat; background-position: right 5px center; background-size: 12px;
-    }
     .search-wrapper { position: relative; height: 100%; }
     .search-input { 
         background: #222; border: 1px solid #444; color: #fff; 
         padding: 0 10px; border-radius: 4px; width: 150px; height: 100%;
-        transition: width 0.3s; font-size: 13px;
+        transition: width 0.3s; font-size: 13px; box-sizing: border-box;
     }
     .search-input:focus { width: 220px; border-color: #0078d4; outline: none; }
-	
-    /* 搜索按钮美化 */
+    
     .search-btn {
         height: 100%; padding: 0 16px; background-color: #0078d4; color: white; border: none;
         border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;
@@ -169,7 +157,8 @@
     }
     .search-btn:hover { background-color: #0063b1; }
     .search-btn:active { transform: scale(0.96); }
-    
+
+    /* 建议列表 */
     .autocomplete-list { 
         position: absolute; top: 110%; left: 0; min-width: 100%; 
         background: #1e1e1e; border: 1px solid #444; border-radius: 4px; 
@@ -181,6 +170,100 @@
     }
     .suggestion-item.active, .suggestion-item:hover { background: #0078d4; color: #fff; }
     .suggestion-item .count { color: #666; font-size: 0.9em; }
+
+    /* 隐藏移动端专属按钮 (PC端默认不显示) */
+    .mobile-search-toggle, .cancel-search-btn { display: none; }
+
+    /* =========================================
+       移动端专属优化 (卡片布局 + 搜索抽屉)
+       ========================================= */
+    @media (max-width: 768px) {
+        /* 卡片重排 */
+        .char-grid {
+            grid-template-columns: repeat(4, 1fr) !important;
+            gap: 8px !important;
+            padding: 60px 10px 20px 10px !important;
+        }
+        .char-info { padding: 6px !important; }
+        .char-name { font-size: 0.75em !important; margin-bottom: 2px !important; }
+        .char-count { font-size: 0.65em !important; }
+        .mobile-folder-hint { width: 24px; height: 24px; font-size: 14px; bottom: 45px; right: 4px; }
+		
+        /* 唤醒按钮：平时安静地呆在右上角 */
+        .mobile-search-toggle {
+            display: flex; align-items: center; justify-content: center;
+            background: transparent; border: none; color: #fff;
+            font-size: 18px; cursor: pointer; padding: 0 10px; height: 100%;
+        }
+
+        /* 默认隐藏原来的横排搜索栏 */
+        .filter-bar { display: none; }
+
+        /* 3. 核心：抽屉展开时的样式 */
+        .filter-bar.mobile-open {
+            display: flex; position: fixed;
+            top: 0; left: 0; width: 100%; height: 60px; /* 抽屉总高度 */
+            background: #1a1a1a; z-index: 2000;
+            padding: 0 15px; box-sizing: border-box;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.6);
+            animation: slideDown 0.2s ease-out forwards;
+            gap: 12px; margin: 0 !important;
+            
+            /* 【核心修复1】：垂直居中，绝对不能拉伸 */
+            align-items: center; 
+            /* 【核心修复2】：水平居中对齐，让搜索框不要太宽 */
+            justify-content: center; 
+        }
+
+        @keyframes slideDown {
+            from { transform: translateY(-100%); }
+            to { transform: translateY(0); }
+        }
+
+        /* 4. 抽屉内的输入框排版 */
+        .filter-bar.mobile-open .search-wrapper { 
+            flex: 1; 
+            max-width: 240px; /* 【核心修复3】：限制搜索框最大宽度，不再傻大黑粗 */
+            height: 36px;     /* 设定移动端舒适的固定高度 */
+        }
+        .filter-bar.mobile-open .search-input { 
+            width: 100%; 
+            height: 100%; 
+            padding: 0 16px; 
+            border-radius: 18px; /* 改为胶囊圆角，在手机上更好看 */
+        }
+        
+        .desktop-text { display: none; }
+        
+        /* 5. 搜索按钮 */
+        .filter-bar.mobile-open .search-btn { 
+            height: 36px;   /* 与输入框等高 */
+            width: 44px;    /* 固定宽度，变成一个正方形/圆角按钮 */
+            padding: 0; 
+            border-radius: 18px; /* 胶囊圆角 */
+            flex-shrink: 0; /* 【核心修复4】：绝对不许被挤扁！ */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        /* 6. 取消按钮 */
+        .cancel-search-btn {
+            display: block; background: transparent; border: none;
+            color: #ccc; font-size: 15px; 
+            padding: 0 5px; white-space: nowrap; cursor: pointer;
+            flex-shrink: 0; /* 【核心修复5】：绝对不许被挤扁！ */
+        }
+        
+        /* 修复建议列表在抽屉下的位置和宽度问题 */
+        .autocomplete-list { 
+            width: 100vw; 
+            left: 50%; 
+            transform: translateX(-50%); /* 保证联想词列表在屏幕正中铺满 */
+            top: calc(100% + 12px); 
+            border-radius: 0 0 8px 8px; 
+        }
+    }
 </style>
 
 <script>
@@ -194,6 +277,8 @@ function exploreApp() {
         allTags: [],
         suggestions: [],
         selectedIndex: -1,
+        // 控制移动端抽屉的状态
+        mobileSearchOpen: false,
 
         init() {
             this.loadTagsCache();
@@ -247,7 +332,6 @@ function exploreApp() {
             
             const newTagName = (item.type === 'char') ? `char:${item.name.replace('char:', '')}` : item.name;
             
-            // 替换最后一部分并追加逗号和空格，实现和 tags.html 一致的连续补全体验
             parts[parts.length - 1] = ' ' + newTagName; 
             this.searchQuery = parts.join(',') + ', ';
             
@@ -269,12 +353,10 @@ function exploreApp() {
             if (!queryRaw) return;
             
             let query = queryRaw;
-            // 自动修正角色前缀逻辑
             if (this.searchType === 'char' && !query.startsWith('char:')) {
                 query = 'char:' + query;
             }
 
-            // 【核心修改】：将默认跳转路由从 /search 改为 /search/folders
             const url = `/search/folders?q=${encodeURIComponent(query)}&folder=${encodeURIComponent(this.currentPath)}`;
             window.location.href = url;
         },
