@@ -1,2 +1,1 @@
-start "frp" ".\frp\run.bat"
-uv run main.py
+uv run app.py

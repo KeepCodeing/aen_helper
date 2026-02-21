@@ -53,6 +53,11 @@
                            @keydown.enter.prevent="handleEnter()"
                            @keydown.escape.prevent="suggestions = []; selectedIndex = -1"
                            id="gridSearchInput">
+						   
+				   <div class="search-tools" x-show="searchQuery.length > 0" x-cloak>
+                        <span class="tool-icon" @click="clearSearch()" title="清空搜索词">✖</span>
+                        <span class="tool-icon" @click="copySearch($event)" title="复制搜索词">📋</span>
+                    </div>
                     
                     <div class="autocomplete-list" 
                          x-show="suggestions.length > 0" 
@@ -265,9 +270,33 @@
 .search-wrapper { position: relative; height: 100%; }
 .search-input { 
 	background: #222; border: 1px solid #444; color: #fff; 
-	padding: 0 10px; border-radius: 4px; width: 140px; height: 100%;
+	/* 【修改】：将右侧 padding 从 10px 改为 45px，为按钮留出空间 */
+	padding: 0 45px 0 10px; border-radius: 4px; width: 140px; height: 100%;
 	transition: width 0.3s; font-size: 13px; box-sizing: border-box;
 }
+/* 【新增】：搜索框内嵌工具按钮样式 */
+.search-tools {
+	position: absolute;
+	right: 8px;
+	top: 50%;
+	transform: translateY(-50%);
+	display: flex;
+	gap: 6px;
+	z-index: 10;
+}
+.tool-icon {
+	cursor: pointer;
+	color: #888;
+	font-size: 12px;
+	transition: color 0.2s, transform 0.1s;
+	user-select: none;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.tool-icon:hover { color: #fff; transform: scale(1.15); }
+.tool-icon:active { transform: scale(0.9); }
+
 .search-input:focus { width: 200px; border-color: #0078d4; outline: none; }
 
 .autocomplete-list { 
@@ -656,7 +685,35 @@ function galleryApp(apiUrl) {
             }
             this.suggestions = this.allTags
                 .filter(t => t.name.toLowerCase().includes(lastPart))
+                // 【新增】：根据 name 字段进行字母表 (首字母) 排序
+                .sort((a, b) => a.name.localeCompare(b.name))
                 .slice(0, 10);
+        },
+
+        // 【新增】：清空搜索框并让输入框重新获得焦点
+        clearSearch() {
+            this.searchQuery = '';
+            this.suggestions = [];
+            this.selectedIndex = -1;
+            this.$nextTick(() => {
+                const input = document.getElementById('gridSearchInput');
+                if (input) input.focus();
+            });
+        },
+
+        // 【新增】：一键复制，并附带小图标变成 ✅ 的视觉反馈
+        async copySearch(event) {
+            if (!this.searchQuery) return;
+            try {
+                await navigator.clipboard.writeText(this.searchQuery);
+                const target = event.target;
+                const oldText = target.innerText;
+                target.innerText = '✅'; // 临时变为绿勾
+                setTimeout(() => target.innerText = oldText, 1500); // 1.5秒后恢复
+            } catch (err) {
+                console.error('复制失败:', err);
+                alert("复制失败，您的浏览器可能不支持剪贴板API");
+            }
         },
 
         navigateSuggestions(direction) {
