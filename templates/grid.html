@@ -53,11 +53,7 @@
                            @keydown.enter.prevent="handleEnter()"
                            @keydown.escape.prevent="suggestions = []; selectedIndex = -1"
                            id="gridSearchInput">
-						   
-				   <div class="search-tools" x-show="searchQuery.length > 0" x-cloak>
-                        <span class="tool-icon" @click="clearSearch()" title="清空搜索词">✖</span>
-                        <span class="tool-icon" @click="copySearch($event)" title="复制搜索词">📋</span>
-                    </div>
+
                     
                     <div class="autocomplete-list" 
                          x-show="suggestions.length > 0" 
@@ -158,10 +154,46 @@
             </div>
             
             <div class="tags-search-area">
-                <input type="text" 
-                       x-model="tagSearchQuery" 
-                       placeholder="点击下方标签组合搜索 (以逗号分隔)..." 
-                       @keydown.enter="performTagSearch()">
+                <div class="search-wrapper" style="flex: 1; display: flex; align-items: center;">
+                    <input type="text" 
+                           id="tagModalSearchInput"
+                           x-model="tagSearchQuery" 
+                           placeholder="点击下方标签组合搜索，或直接手动输入..." 
+                           @input="handleTagInput()"
+                           @keydown.arrow-down.prevent="navigateTagSuggestions(1)"
+                           @keydown.arrow-up.prevent="navigateTagSuggestions(-1)"
+                           @keydown.enter.prevent="handleTagEnter()"
+                           @keydown.escape.prevent="tagSuggestions = []; tagSelectedIndex = -1"
+                           style="width: 100%; padding-right: 60px; height: 100%;">
+
+                    <div class="search-tools" x-cloak style="right: 10px;">
+                        <span class="tool-icon" 
+                              x-show="tagSearchQuery.length > 0" 
+                              @click="clearTagSearch()" 
+                              title="清空搜索词">✖</span>
+                              
+                        <span class="tool-icon" 
+                              x-show="currentImageTags.length > 0" 
+                              @click="fillAllTags($event)" 
+                              title="提取当前图片所有标签到搜索框">📋</span>
+                    </div>
+
+                    <div class="autocomplete-list" 
+                         x-show="tagSuggestions.length > 0" 
+                         @click.outside="tagSuggestions = []; tagSelectedIndex = -1"
+                         style="top: 100%; left: 0; width: 100%;">
+                        <template x-for="(item, index) in tagSuggestions" :key="index">
+                            <div class="suggestion-item" 
+                                 :class="{ 'active': tagSelectedIndex === index }"
+                                 @click="selectTagSuggestion(item)"
+                                 @mouseover="tagSelectedIndex = index">
+                                <span x-text="item.name"></span>
+                                <span class="count" x-text="item.count"></span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+                
                 <button class="search-btn" @click="performTagSearch()">🔍 搜索</button>
             </div>
             
@@ -270,35 +302,21 @@
 .search-wrapper { position: relative; height: 100%; }
 .search-input { 
 	background: #222; border: 1px solid #444; color: #fff; 
-	/* 【修改】：将右侧 padding 从 10px 改为 45px，为按钮留出空间 */
-	padding: 0 45px 0 10px; border-radius: 4px; width: 140px; height: 100%;
+	padding: 0 10px; border-radius: 4px; width: 140px; height: 100%;
 	transition: width 0.3s; font-size: 13px; box-sizing: border-box;
 }
-/* 【新增】：搜索框内嵌工具按钮样式 */
+.search-input:focus { width: 200px; border-color: #0078d4; outline: none; }
+/* 搜索框内嵌工具按钮样式 */
 .search-tools {
-	position: absolute;
-	right: 8px;
-	top: 50%;
-	transform: translateY(-50%);
-	display: flex;
-	gap: 6px;
-	z-index: 10;
+	position: absolute; right: 8px; top: 50%;
+	transform: translateY(-50%); display: flex; gap: 6px; z-index: 10;
 }
 .tool-icon {
-	cursor: pointer;
-	color: #888;
-	font-size: 12px;
-	transition: color 0.2s, transform 0.1s;
-	user-select: none;
-	display: flex;
-	align-items: center;
-	justify-content: center;
+	cursor: pointer; color: #888; font-size: 12px; transition: color 0.2s, transform 0.1s;
+	user-select: none; display: flex; align-items: center; justify-content: center;
 }
 .tool-icon:hover { color: #fff; transform: scale(1.15); }
 .tool-icon:active { transform: scale(0.9); }
-
-.search-input:focus { width: 200px; border-color: #0078d4; outline: none; }
-
 .autocomplete-list { 
 	position: absolute; top: 110%; left: 0; min-width: 100%; 
 	background: #1e1e1e; border: 1px solid #444; border-radius: 4px; 
@@ -525,6 +543,9 @@ function galleryApp(apiUrl) {
         showNav: true,
         lastScrollY: 0,
 		
+		tagSuggestions: [],     // <--- 新增
+        tagSelectedIndex: -1,   // <--- 新增
+		
 		tagsModalOpen: false,
         loadingTags: false,
         currentImageTags: [],
@@ -573,18 +594,18 @@ function galleryApp(apiUrl) {
             }
         },
 		
-		// 1. 打开标签面板并请求数据
-        async viewImageTags(file) {
+		async viewImageTags(file) {
             this.tagsModalOpen = true;
             this.loadingTags = true;
             this.currentImageTags = [];
-            this.tagSearchQuery = ''; // 每次打开清空搜索框
+            this.tagSearchQuery = ''; 
             
             try {
-                // 向后端请求该图片的所有 Tags
                 const res = await fetch('/api/image_tags?path=' + encodeURIComponent(file));
                 const tags = await res.json();
-                this.currentImageTags = tags;
+                
+                // 【核心修改 1】：将获取到的图片标签按首字母 (A-Z) 排序
+                this.currentImageTags = tags.sort((a, b) => a.localeCompare(b));
             } catch (e) {
                 console.error("加载图片标签失败:", e);
             } finally {
@@ -685,35 +706,7 @@ function galleryApp(apiUrl) {
             }
             this.suggestions = this.allTags
                 .filter(t => t.name.toLowerCase().includes(lastPart))
-                // 【新增】：根据 name 字段进行字母表 (首字母) 排序
-                .sort((a, b) => a.name.localeCompare(b.name))
                 .slice(0, 10);
-        },
-
-        // 【新增】：清空搜索框并让输入框重新获得焦点
-        clearSearch() {
-            this.searchQuery = '';
-            this.suggestions = [];
-            this.selectedIndex = -1;
-            this.$nextTick(() => {
-                const input = document.getElementById('gridSearchInput');
-                if (input) input.focus();
-            });
-        },
-
-        // 【新增】：一键复制，并附带小图标变成 ✅ 的视觉反馈
-        async copySearch(event) {
-            if (!this.searchQuery) return;
-            try {
-                await navigator.clipboard.writeText(this.searchQuery);
-                const target = event.target;
-                const oldText = target.innerText;
-                target.innerText = '✅'; // 临时变为绿勾
-                setTimeout(() => target.innerText = oldText, 1500); // 1.5秒后恢复
-            } catch (err) {
-                console.error('复制失败:', err);
-                alert("复制失败，您的浏览器可能不支持剪贴板API");
-            }
         },
 
         navigateSuggestions(direction) {
@@ -839,6 +832,104 @@ function galleryApp(apiUrl) {
                     this.prev(); // 向右划，看上一张
                 }
             }
+        },
+		
+		handleTagInput() {
+            this.tagSelectedIndex = -1;
+            const val = this.tagSearchQuery;
+            const parts = val.split(',');
+            const lastPart = parts[parts.length - 1].trim().toLowerCase();
+
+            if (lastPart.length < 1) {
+                this.tagSuggestions = [];
+                return;
+            }
+            // 利用全局缓存的 allTags 提供模态框内的联想提示，并按字母排序
+            this.tagSuggestions = this.allTags
+                .filter(t => t.name.toLowerCase().includes(lastPart))
+                .sort((a, b) => a.name.localeCompare(b.name)) 
+                .slice(0, 10);
+        },
+
+        navigateTagSuggestions(direction) {
+            if (this.tagSuggestions.length === 0) return;
+            this.tagSelectedIndex += direction;
+            if (this.tagSelectedIndex < 0) this.tagSelectedIndex = this.tagSuggestions.length - 1;
+            else if (this.tagSelectedIndex >= this.tagSuggestions.length) this.tagSelectedIndex = 0;
+            
+            this.$nextTick(() => {
+                const activeEl = document.querySelector('.tags-modal .suggestion-item.active');
+                if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+            });
+        },
+
+        handleTagEnter() {
+            // 如果选中了提示词则补全，否则直接执行搜索
+            if (this.tagSuggestions.length > 0 && this.tagSelectedIndex >= 0) {
+                this.selectTagSuggestion(this.tagSuggestions[this.tagSelectedIndex]);
+            } else {
+                this.performTagSearch();
+            }
+        },
+
+        selectTagSuggestion(item) {
+            let current = this.tagSearchQuery;
+            const parts = current.split(',');
+            // 兼容角色 tag 的补全
+            const newTagName = (item.type === 'char') ? `char:${item.name.replace('char:', '')}` : item.name;
+            parts[parts.length - 1] = ' ' + newTagName; 
+            this.tagSearchQuery = parts.join(',') + ', ';
+            
+            this.tagSuggestions = [];
+            this.tagSelectedIndex = -1;
+            
+            // 补全后重新聚焦输入框
+            this.$nextTick(() => {
+                const input = document.getElementById('tagModalSearchInput');
+                if (input) {
+                    input.focus();
+                    const len = input.value.length;
+                    input.setSelectionRange(len, len);
+                }
+            });
+        },
+
+        clearTagSearch() {
+            this.tagSearchQuery = '';
+            this.tagSuggestions = [];
+            this.tagSelectedIndex = -1;
+            this.$nextTick(() => {
+                const input = document.getElementById('tagModalSearchInput');
+                if (input) input.focus();
+            });
+        },
+
+        // 【修改】：一键提取当前图片的所有标签到搜索框 (覆盖原内容)
+        fillAllTags(event) {
+            if (this.currentImageTags.length === 0) return;
+            
+            // 将当前图片的所有标签用逗号加空格拼接，末尾也留一个逗号方便继续手写
+            this.tagSearchQuery = this.currentImageTags.join(', ') + ', ';
+            
+            // 重置并隐藏可能存在的联想提示框
+            this.tagSuggestions = [];
+            this.tagSelectedIndex = -1;
+
+            // 自动聚焦输入框并将光标移到最后
+            this.$nextTick(() => {
+                const input = document.getElementById('tagModalSearchInput');
+                if (input) {
+                    input.focus();
+                    const len = input.value.length;
+                    input.setSelectionRange(len, len);
+                }
+            });
+
+            // 动态按钮反馈：变成绿色对勾提示提取成功
+            const target = event.target;
+            const oldText = target.innerText;
+            target.innerText = '✅';
+            setTimeout(() => target.innerText = oldText, 1500);
         },
         
         // 【新增】：智能切换到文件夹模式，保留作者目录过滤
